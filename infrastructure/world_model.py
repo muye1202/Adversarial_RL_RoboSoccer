@@ -1,6 +1,6 @@
 import math
 import random
-import game_object
+from . import game_object
 
 class WorldModel:
     """

@@ -2,10 +2,10 @@
 
 import threading
 import time
-import sock
-import sp_exceptions
-import handler
-from world_model import WorldModel
+from . import sock
+from . import sp_exceptions
+from . import handler
+from . import world_model
 
 class Agent:
     def __init__(self):
@@ -56,7 +56,7 @@ class Agent:
         self.__sock = sock.Socket(host, port)
 
         # our models of the world and our body
-        self.wm = WorldModel(handler.ActionHandler(self.__sock))
+        self.wm = world_model.WorldModel(handler.ActionHandler(self.__sock))
 
         # set the team name of the world model to the given name
         self.wm.teamname = teamname
@@ -256,7 +256,7 @@ class Agent:
 
             # used to flip x coords for other side
             side_mod = 1
-            if self.wm.side == WorldModel.SIDE_R:
+            if self.wm.side == world_model.WorldModel.SIDE_R:
                 side_mod = -1
             
             self.wm.teleport_to_point((5 * side_mod, 0))
@@ -266,7 +266,7 @@ class Agent:
 
         # determine the enemy goal position
         goal_pos = None
-        if self.wm.side == WorldModel.SIDE_R:
+        if self.wm.side == world_model.WorldModel.SIDE_R:
             goal_pos = (-55, 0)
         else:
             goal_pos = (55, 0)
