@@ -355,13 +355,9 @@ class MessageHandler:
             # set the attribute if it was accounted for, otherwise alert the user
             if hasattr(self.wm.server_parameters, key):
                 setattr(self.wm.server_parameters, key, value)
-            else:
-                with open('missing_param.txt','w') as f:
-                    f.write(str(key))
-                    
+            else:                    
                 raise AttributeError("Couldn't find a matching parameter in "
                         "ServerParameters class: '%s'" % key)
-
 
     def _handle_init(self, msg):
         """

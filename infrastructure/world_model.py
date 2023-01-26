@@ -36,6 +36,11 @@ class WorldModel:
 
 
     # constants for team sides
+    ball = None
+    flags = []
+    goals = []
+    players = []
+    lines = []
     SIDE_L = "l"
     SIDE_R = "r"
     score_l = 0
@@ -313,6 +318,15 @@ class WorldModel:
         if a < 0:
             a = 360 + a
 
+        # if dy > 0 and dx > 0:
+        #     a = math.degrees(math.atan2(dy, dx))
+        # elif dy > 0 and dx < 0:
+        #     a = 180 - math.degrees(math.atan2(dy, dx))
+        # elif dy < 0 and dx < 0:
+        #     a = -math.degrees(math.atan2(dy, dx))
+        # else:
+        #     a = math.degrees(math.atan2(dy, dx))
+
         return a
 
     def process_new_info(self, ball, flags, goals, players, lines):
@@ -320,6 +334,10 @@ class WorldModel:
         Update any internal variables based on the currently available
         information.  This also calculates information not available directly
         from server-reported messages, such as player coordinates.
+        
+        INPUT:
+            - ball: GameObject object representing the ball.
+            - goals: list of goals for both sides.
         """
 
         # update basic information

@@ -22,8 +22,6 @@ def parse(text):
     if text.count("(") != text.count(")"):
         raise ValueError("Message text has unmatching parenthesis!")
     
-    print(text)
-    
     # result acts as a stack that holds the strings grouped by nested parens.
     # result will only ever contain one item, the first level of indenting
     # encountered.  this is because the server (hopefully!) only ever sends one
