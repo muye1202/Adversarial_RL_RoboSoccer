@@ -1,9 +1,9 @@
 import collections
 import queue
-from . import message_parser
-from . import sp_exceptions
-from . import game_object
-from .world_model import WorldModel
+import message_parser
+import sp_exceptions
+import game_object
+from world_model import WorldModel
 
 # should we print messages received from the server?
 PRINT_SERVER_MESSAGES = False

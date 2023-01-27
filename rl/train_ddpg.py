@@ -10,19 +10,6 @@ from stable_baselines3 import DDPG
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common import results_plotter
 from stable_baselines3.common.evaluation import evaluate_policy
-
-
-# start an agent for training
-# def spawn_agent(team_name, unnum=1):
-#     """
-#     Used to run an agent in a seperate physical process.
-#     """
-
-#     a = agent.Agent()
-#     a.connect("localhost", 6000, team_name, unnum)
-#     a.play()
-    
-#     return a
     
 teamname = "my_team"
 player = agent.Agent()

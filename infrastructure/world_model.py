@@ -1,6 +1,6 @@
 import math
 import random
-from . import game_object
+import game_object
 
 class WorldModel:
     """
@@ -317,6 +317,7 @@ class WorldModel:
         a = math.degrees(math.atan2(dy, dx))
         if a < 0:
             a = 360 + a
+        # print("dir relative to destination: " + str(a))
 
         # if dy > 0 and dx > 0:
         #     a = math.degrees(math.atan2(dy, dx))
