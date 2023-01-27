@@ -26,13 +26,14 @@ class RoboPlayer(Env):
         # For details:
         # https://rcsoccersim.readthedocs.io/en/latest/soccerclient.html#control-commands
         if role == "defender":
-            #                                     move_speed move_dir tackle
-            self.action_space = Box(low=np.array([-100., -np.pi, -90.]), \
+            # move_speed move_dir tackle
+            self.action_space = Box(low=np.array([0., -np.pi, -90.]), \
                                     high=np.array([100., np.pi, 90.]))
         else:
-                                                # move_speed move_dir kick_pow kick_dir
-            self.action_space = Box(low=np.array([-100., -np.pi, -100., -np.pi]), \
-                                    high=np.array([100., np.pi, 100., np.pi]))
+            # [move_speed move_dir kick_pow kick_dir]
+            # the kick direction needs to be within view angle
+            self.action_space = Box(low=np.array([0., -np.pi, 0., -45]), \
+                                    high=np.array([100., np.pi, 20., 45]))
         
         # create state space of the agent
         # the state space of the agent includes:
@@ -77,43 +78,35 @@ class RoboPlayer(Env):
                         goal_to_player.append(goal.distance)
                         goal_to_player.append(goal.direction)
             
-            #### SENDING COMMANDS ####
+            ###################### SENDING COMMANDS ########################
             #################################################################
-            # the player sprints towards certain dir with speed
-            dash_speed = action[0]
-            dash_dir = action[1]
+            # # VALUES CHOSEN BY NETWORK
+            # # the player sprints towards certain dir with speed
+            # dash_speed = action[0]
+            # dash_dir = action[1]
             
             # the agent should find the ball if ball not in sight
             if self.agent.wm.ball is None or self.agent.wm.ball.direction is None:
                 self.agent.wm.ah.turn(30)
-            
-            # The player needs to move to the ball
+
             if self.agent.wm.ball is not None and not self.agent.wm.is_before_kick_off():
-                ## the player should face the ball
-                if self.agent.wm.ball.direction is not None:
-                    self.agent.wm.ah.turn(self.agent.wm.ball.direction / 2)
-                
                 ## the player should move to the ball
-                self.agent.wm.ah.dash(dash_speed, dash_dir)
+                ## with a constant speed in order to 
+                ## perform meaningful dribbling and kicking
+                ## slow down the player as it approaches
+                player_vel = 40
+                if self.agent.wm.ball.distance <= 5:
+                    player_vel = 30
 
-                if self.side == "defender":
-                    # send the tackle command
-                    tackle = action[3]
-                    self.agent.wm.ah.tackle(tackle, "off")
-                else:
-                    # the player kicks the ball with pow and dir
-                    kick_power = action[2]
-                    kick_dir = action[3]
-                    
-                    if self.agent.wm.is_ball_kickable():
-                        self.agent.wm.ah.kick(kick_power, kick_dir)
+                self.agent.wm.ah.dash(player_vel, self.agent.wm.ball.direction)
+
+                kick_power = action[2]
+                kick_dir = action[3]
+                if self.agent.wm.is_ball_kickable():
+                    self.agent.wm.ah.kick(kick_power, kick_dir)
             
-            # # DO NOT move on until new msg from server has been received
-            # while not self.agent.received_update():
-            #     time.sleep(0.0001)
-
-            ### Get the sensor updates ###
-            ##############################
+            ############# EVALUATE UPDATES ###########
+            ##########################################
             # get current score
             if self.agent.wm.side == "l":
                 curr_score = self.agent.wm.score_l
@@ -140,14 +133,13 @@ class RoboPlayer(Env):
                 ball_to_player.append(self.agent.wm.ball.distance)
                 ball_to_player.append(self.agent.wm.ball.direction)
             
-                ### STATES ###
-
+                ############## STATES ################
                 # update the state of the player and ball
                 # used to determine if an episode has ended
                 self.state = np.array([curr_pos[0], curr_pos[1]])
                 
-                # use the abs coord of player to get abs coord
-                # of the ball
+                # UNCOMMENT IF NEED TO use the abs coord of player 
+                # to get abs coord of the ball
                 # ball_abs_coord_x = curr_pos[0] + ball_to_player[0]*np.cos(ball_to_player[1])
                 # ball_abs_coord_y = curr_pos[1] + ball_to_player[0]*np.sin(ball_to_player[1])
                 # self.state["ball"] = np.array([ball_abs_coord_x, ball_abs_coord_y])
@@ -160,6 +152,15 @@ class RoboPlayer(Env):
                 if len(goal_to_player) == 4:
                     is_nearer_to_goal = (goal_to_player[2] - goal_to_player[0] > 0)
                 
+                # determine if player is in shooting range
+                is_in_shoot_range = False
+                goal_dist = 50
+                for goal in self.agent.wm.goals:
+                    if goal.goal_id == enemy_goal_id:
+                        goal_dist = goal.distance
+                
+                is_in_shoot_range = (goal_dist < 20.)
+                
                 ### REWARDS ###
                 # For attackers:
                 #       1. For each step without scoring, reward = 0
@@ -169,13 +170,14 @@ class RoboPlayer(Env):
                 #       5. Score a goal, reward is set to 10
                 #       6. The ball's distance towards the goal advances, reward = + 0.5
                 #       7. The ball is out of field, reward = -5
+                #       8. Inside shooting range to the goal, reward = + 2
                 # For defenders:
                 #       For each step without being scored, reward = +1
                 #       Taking control over the ball, reward = +10
                 #       Blocking shooting route, reward = +1
                 
                 # attacking side
-                # NOTE: implement attacker reward 1 5 6 7.
+                # NOTE: implement attacker reward 1 5 6 7 8.
                 if self.side == "attacker":
                     if curr_score > enemy_score:
                         rewards = 10
@@ -187,6 +189,8 @@ class RoboPlayer(Env):
                         done = True
                     elif is_nearer_to_goal:
                         rewards += 0.5
+                    elif is_in_shoot_range:
+                        rewards += 2
                 
         info = {}
         return self.state, rewards, done, info

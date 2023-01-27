@@ -638,7 +638,7 @@ class ServerParameters:
         self.control_radius = 2
         self.dash_angle_step = 1
         self.dash_power_rate =0.006
-        self.drop_ball_time = 200
+        self.drop_ball_time = 10000
         self.effort_dec = 0.005
         self.effort_dec_thr = 0.3
         self.effort_inc = 0.01
@@ -791,7 +791,7 @@ class ServerParameters:
         self.use_offside = 1
         self.verbose = 0
         self.visible_angle = 90
-        self.visible_distance = 3
+        self.visible_distance = 100
         self.wind_ang = 0
         self.wind_dir = 0
         self.wind_force = 0
