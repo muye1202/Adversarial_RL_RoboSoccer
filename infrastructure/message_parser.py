@@ -139,7 +139,7 @@ if __name__ == "__main__":
     import sys
     
     # just parse the message file
-    with open("client_recv", 'r') as f:
+    with open("20230127224747-my_team_0-vs-enemy_0.rcg", 'r') as f:
         for line in f:
             parsed_msg = parse(line.strip())
 

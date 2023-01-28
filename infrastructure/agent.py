@@ -114,7 +114,7 @@ class Agent:
 
     def play(self):
         """
-        NOT USED FOR TRAINING, ONLY THIS SAMPLE AGENT
+        USED FOR TRAINING TO START MATCH
 
         Kicks off the thread that does the agent's thinking, allowing it to play
         during the game.  Throws an exception if called while the agent is
@@ -223,7 +223,6 @@ class Agent:
         play method to start play, and the disconnect method to end it.
         """
         while self.__thinking:
-            start_form = True
             # tell the ActionHandler to send its enqueued messages if it is time
             if self.send_commands:
                 self.send_commands = False
@@ -238,14 +237,11 @@ class Agent:
                 self.should_think_on_data = False
 
                 # performs the actions necessary for the agent to play soccer
-                # self.think()
-                if start_form:
-                    self.move_to_formation()
-                    
-                    robot_pos = self.wm.abs_coords
-                    if robot_pos != (None, None):
-                        # start_form = False
-                        self.__thinking = False
+                self.move_to_formation()
+                
+                robot_pos = self.wm.abs_coords
+                if robot_pos != (None, None):
+                    self.__thinking = False
                 
             else:
                 # prevent from burning up all the cpu time while waiting for data
@@ -269,11 +265,14 @@ class Agent:
 
             # used to flip x coords for other side
             side_mod = -1
-            if self.wm.side == world_model.WorldModel.SIDE_R:
+            if self.wm.side == world_model.WorldModel.SIDE_L:
+                self.wm.teleport_to_point((5 * side_mod, 0))
+                self.in_kick_off_formation = True
+            else:
                 side_mod = 1
-            
-            self.wm.teleport_to_point((5 * side_mod, 0))
-            self.in_kick_off_formation = True
+                self.wm.teleport_to_point((5, 10))
+                # self.wm.ah.turn(-170)
+                self.in_kick_off_formation = True
 
             return (5*side_mod, 0)
 

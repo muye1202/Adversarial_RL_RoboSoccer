@@ -67,6 +67,7 @@ class WorldModel:
     abs_coords = (None, None)
     abs_neck_dir = None
     abs_body_dir = None
+    is_goal = None
 
     class RefereeMessages:
         """
@@ -317,16 +318,6 @@ class WorldModel:
         a = math.degrees(math.atan2(dy, dx))
         if a < 0:
             a = 360 + a
-        # print("dir relative to destination: " + str(a))
-
-        # if dy > 0 and dx > 0:
-        #     a = math.degrees(math.atan2(dy, dx))
-        # elif dy > 0 and dx < 0:
-        #     a = 180 - math.degrees(math.atan2(dy, dx))
-        # elif dy < 0 and dx < 0:
-        #     a = -math.degrees(math.atan2(dy, dx))
-        # else:
-        #     a = math.degrees(math.atan2(dy, dx))
 
         return a
 
@@ -408,6 +399,27 @@ class WorldModel:
             return free_right
         else:
             return free_left
+
+    def is_goal_kick(self):
+        """
+        See if it's our goal kick
+        """
+        if self.side == WorldModel.SIDE_L:
+            return (self.play_mode == WorldModel.PlayModes.GOAL_KICK_R)
+        else:
+            return (self.play_mode == WorldModel.PlayModes.GOAL_KICK_L)
+        
+    def is_kick_in(self):
+        if self.side == WorldModel.SIDE_L:
+            return (self.play_mode == WorldModel.PlayModes.KICK_IN_R)
+        else:
+            return (self.play_mode == WorldModel.PlayModes.KICK_IN_L)
+        
+    def is_scored(self):
+        """
+        Check if either side scored
+        """
+        return self.is_goal
 
     def is_ball_kickable(self):
         """

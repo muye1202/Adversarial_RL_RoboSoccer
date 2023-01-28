@@ -23,6 +23,10 @@ class MessageHandler:
 
     # an inner class used for creating named tuple 'hear' messages
     Message = collections.namedtuple("Message", "time sender message")
+    
+    ## DEBUG FILE
+    f = open('parsed_msgs.txt', 'w')
+    debug_file = f
 
     def __init__(self, world_model):
         self.wm = world_model
@@ -36,6 +40,7 @@ class MessageHandler:
 
         # get all the expressions contained in the given message
         parsed = message_parser.parse(msg)
+        # self.debug_file.write(str(parsed))
 
         if PRINT_SERVER_MESSAGES:
             print(parsed[0] + ":", parsed[1:], "\n")
@@ -240,9 +245,11 @@ class MessageHandler:
             if mode.startswith(WorldModel.RefereeMessages.GOAL_L):
                 # split off the number, the part after the rightmost '_'
                 self.wm.score_l = int(mode.rsplit("_", 1)[1])
+                self.wm.is_goal = True
                 return
             elif mode.startswith(WorldModel.RefereeMessages.GOAL_R):
                 self.wm.score_r = int(mode.rsplit("_", 1)[1])
+                self.wm.is_goal = True
                 return
 
             # ignore these messages, but pass them on to the agent. these don't
@@ -470,12 +477,17 @@ class ActionHandler:
                 print("sent:", primary_cmd.text, "\n")
 
             self.sock.send(primary_cmd.text)
+            
+    def move_ball(self, x, y):
+        """
+        Move the ball to a certain position
+        """
+        msg = "(move ball %.10f %.10f)" % (x, y)
+        
+        cmd_type = ActionHandler.CommandType.TYPE_PRIMARY
+        cmd = ActionHandler.Command(cmd_type, msg)
 
-    # def kick_off(self):
-    #     """
-    #     Tell the referee to start the match
-    #     """
-    #     msg = "()"
+        self.q.put(cmd)
 
     def move(self, x, y):
         """
