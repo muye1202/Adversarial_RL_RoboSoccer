@@ -512,6 +512,11 @@ class ActionHandler:
         """
 
         # disallow unreasonable turning
+        if relative_degrees > 180:
+            relative_degrees = -(180 - (relative_degrees-180))
+        elif relative_degrees < -180:
+            relative_degrees = 180-(-180 - relative_degrees)
+
         assert -180 <= relative_degrees <= 180
 
         msg = "(turn %.10f)" % relative_degrees

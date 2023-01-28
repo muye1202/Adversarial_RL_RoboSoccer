@@ -4,3 +4,4 @@ backup
 debug_train.txt
 logs_training
 run_sim.sh
+parsed_msgs.txt
