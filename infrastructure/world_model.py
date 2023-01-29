@@ -29,6 +29,7 @@ class WorldModel:
         DROP_BALL = "drop_ball"
         OFFSIDE_L = "offside_l"
         OFFSIDE_R = "offside_r"
+        IS_GOAL = 'is_goal'
 
         def __init__(self):
             raise NotImplementedError("Don't instantiate a PlayModes class,"
@@ -67,7 +68,6 @@ class WorldModel:
     abs_coords = (None, None)
     abs_neck_dir = None
     abs_body_dir = None
-    is_goal = None
 
     class RefereeMessages:
         """
@@ -354,6 +354,17 @@ class WorldModel:
         else:
             self.abs_body_dir = None
 
+    def get_player_coords(self, side, unnum):
+        """
+        Return the position of player with unnum at side
+        """
+        pos = None
+        for player in self.players:
+            if player.side is side and player.uniform_number is unnum:
+                pos = self.get_object_absolute_coords(player)
+                
+        return pos
+
     def is_before_kick_off(self):
         """
         Tells us whether the game is in a pre-kickoff state.
@@ -419,7 +430,7 @@ class WorldModel:
         """
         Check if either side scored
         """
-        return self.is_goal
+        return (self.play_mode == WorldModel.PlayModes.IS_GOAL)
 
     def is_ball_kickable(self):
         """
@@ -485,7 +496,7 @@ class WorldModel:
 
         # we can't calculate if we don't have a distance to the ball
         if ball.distance is None:
-            return
+            return 0.
 
         # first we get effective kick power:
         # limit kick_power to be between minpower and maxpower

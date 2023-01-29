@@ -5,3 +5,5 @@ debug_train.txt
 logs_training
 run_sim.sh
 parsed_msgs.txt
+sim_process.py
+run_monitor.sh

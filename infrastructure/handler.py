@@ -245,11 +245,11 @@ class MessageHandler:
             if mode.startswith(WorldModel.RefereeMessages.GOAL_L):
                 # split off the number, the part after the rightmost '_'
                 self.wm.score_l = int(mode.rsplit("_", 1)[1])
-                self.wm.is_goal = True
+                self.wm.play_mode = WorldModel.PlayModes.IS_GOAL
                 return
             elif mode.startswith(WorldModel.RefereeMessages.GOAL_R):
                 self.wm.score_r = int(mode.rsplit("_", 1)[1])
-                self.wm.is_goal = True
+                self.wm.play_mode = WorldModel.PlayModes.IS_GOAL
                 return
 
             # ignore these messages, but pass them on to the agent. these don't

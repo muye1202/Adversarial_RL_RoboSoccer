@@ -47,6 +47,9 @@ class Agent:
         self.done = False
         self.process_done = False
         self.reset_flag = None
+        
+        # see if the reset is for starting the match
+        self.kick_off = True
 
     def connect(self, host, port, teamname, unnum, side, goalie=False, version=17):
         """
@@ -293,11 +296,32 @@ class Agent:
         return (self.wm.ball.distance is not None \
                 and self.wm.ball.direction is not None)
 
-    def kick_to_random_pos(self):
+    def get_random_pos(self):
             # kick the ball to random position
-            kick_to_pos_x = np.random.uniform(low=-25, high=0.)
-            kick_to_pos_y = np.random.uniform(low=-40, high=40)
-            self.wm.kick_to((kick_to_pos_x, kick_to_pos_y))
+            kick_to_pos_x = np.random.uniform(low=-5, high=0.)
+            kick_to_pos_y = np.random.uniform(low=-20, high=20)
+            
+            return (kick_to_pos_x, kick_to_pos_y)
+
+    def move_to_kick_ball(self, kick_power, kick_dir, vel):
+        ## the player should move to the ball
+        ## with a constant speed in order to 
+        ## perform meaningful dribbling and kicking
+        ## slow down the player as it approaches
+        player_vel = vel
+        speed_dir = 0.
+        if self.wm.ball is not None:
+            if self.is_ball_measurable():
+                speed_dir = self.wm.ball.direction
+                if self.wm.ball.distance <= 5:
+                    player_vel = 60
+
+        self.wm.ah.turn(speed_dir)
+        self.wm.ah.dash(player_vel, speed_dir)
+        self.last_kick_dir = speed_dir
+
+        if self.wm.is_ball_kickable():
+            self.wm.ah.kick(kick_power, kick_dir)
 
     def think(self, action, done, rewards):
         """
@@ -336,26 +360,9 @@ class Agent:
                 self.wm.ah.turn(30)
 
             elif self.wm.ball is not None and not self.wm.is_before_kick_off():
-                ## the player should move to the ball
-                ## with a constant speed in order to 
-                ## perform meaningful dribbling and kicking
-                ## slow down the player as it approaches
-                player_vel = 70
-                speed_dir = 0.
-                if self.wm.ball is not None:
-                    if self.is_ball_measurable():
-                        speed_dir = self.wm.ball.direction
-                        if self.wm.ball.distance <= 5:
-                            player_vel = 60
-
-                self.wm.ah.turn(speed_dir)
-                self.wm.ah.dash(player_vel, speed_dir)
-                self.last_kick_dir = speed_dir
-
                 kick_power = action[2]
                 kick_dir = action[3]
-                if self.wm.is_ball_kickable():
-                    self.wm.ah.kick(kick_power, kick_dir)
+                self.move_to_kick_ball(kick_power=kick_power, kick_dir=kick_dir, vel=70.)
             
             ############# GET UPDATES ###########
             ##########################################
@@ -385,7 +392,8 @@ class Agent:
                 
                 # determine if the ball is in range
                 # by checking if play_mode is drop ball
-                ball_out_range = (self.wm.is_kick_in() or self.wm.is_goal_kick())
+                ball_out_range = (self.wm.is_kick_in() or self.wm.is_goal_kick()
+                                  or self.wm.is_dead_ball_them())
 
                 # determine if the player comes nearer to the goal
                 if len(goal_to_player) == 4:
@@ -421,7 +429,6 @@ class Agent:
                     rewards += 10
                     done = True
                     reset_flag = 'goal'
-                    self.wm.is_goal = False
 
                 elif ball_out_range:
                     rewards -= 5
@@ -429,18 +436,80 @@ class Agent:
                     done = True
 
                 elif is_nearer_to_goal:
-                    rewards += 0.5
+                    rewards += 1
 
                 elif is_in_shoot_range:
                     rewards += 2
+                
+                else:
+                    rewards -= 0.5
         
         self.rewards = rewards
         self.done = done
         self.process_done = True
-        
+        self.kick_off = False
+
         return reset_flag
 
-    def follow_the_ball(self, is_kick=False):
+    def take_the_ball_to(self, point):
+        """
+        Let the agent dribble the ball to point.
+        """
+        check = False
+        ball_pos = None
+        while not check:
+            if self.send_commands:
+                self.send_commands = False
+                self.wm.ah.send_commands()
+
+            # only think if new data has arrived
+            if self.should_think_on_data:
+                self.should_think_on_data = False
+                
+                if self.wm.ball.distance is None:
+                    self.wm.ah.turn(20)
+                    
+                else:
+                    self.move_to_kick_ball(kick_power=30, kick_dir=0., vel=40)
+                    ball_pos = self.wm.get_object_absolute_coords(self.wm.ball)
+                
+                if ball_pos is not None:
+                    dist_diff = self.wm.euclidean_distance(ball_pos, point)
+                    if dist_diff <= 10:
+                        check = True
+
+    def pass_to_point(self, player=None):
+        """
+        Pass the ball to a player pos 
+        """
+        print("in pass to function")
+        check = False
+        while not check:
+            if self.send_commands:
+                self.send_commands = False
+                self.wm.ah.send_commands()
+
+            # only think if new data has arrived
+            if self.should_think_on_data:
+                self.should_think_on_data = False
+
+                # if no player in sight, turn body
+                if self.wm.get_player_coords('l', unnum=1) is None:
+                    self.wm.ah.turn(50)
+                    
+                else:
+                    # get the player pos in sight
+                    pass_to = self.wm.get_player_coords('l', unnum=1)
+                    if pass_to is not None:
+                        self.wm.kick_to(point=pass_to, extra_power=0.)
+
+                if self.wm.play_mode == world_model.WorldModel.PlayModes.PLAY_ON:
+                    check = True
+                    print("in pass to function")
+                        
+        return True
+
+    def follow_the_ball(self, flag, is_kick=False):
         # turn the body of the opponent to ball
         if self.send_commands:
             self.send_commands = False
@@ -455,7 +524,7 @@ class Agent:
             self.should_think_on_data = False
             
             if self.wm.ball.distance is None:
-                self.wm.ah.turn(30)
+                self.wm.ah.turn(20)
 
             if self.wm.ball is not None:
                 if self.is_ball_measurable():
@@ -465,12 +534,12 @@ class Agent:
                     else:
                         if not is_kick:
                             self.wm.turn_body_to_object(self.wm.ball)
-                        elif is_kick and not self.wm.is_ball_kickable():
-                            self.wm.ah.dash(35, self.wm.ball.direction)
+                        elif is_kick and not self.wm.is_ball_kickable()\
+                             and self.wm.play_mode != self.wm.PlayModes.IS_GOAL:
+                            self.wm.ah.dash(50, self.wm.ball.direction)
                         elif is_kick and self.wm.is_ball_kickable():
-                                self.kick_to_random_pos()
-                                
-                                return True
+                                if self.pass_to_point():
+                                    return True
                             
         return False
 
@@ -481,24 +550,12 @@ class Agent:
             flag = False
             check = False
             while not check:
-                # if self.send_commands:
-                #     self.send_commands = False
-                #     self.wm.ah.send_commands()
-
-                # # only think if new data has arrived
-                # if self.should_think_on_data:
-                #     # flag that data has been processed.  this shouldn't be a race
-                #     # condition, since the only change would be to make it True
-                #     # before changing it to False again, and we're already going to
-                #     # process data, so it doesn't make any difference.
-                #     self.should_think_on_data = False
-
-                #     self.wm.turn_body_to_point((0., 0.))
-                #     self.wm.ah.dash(50, 0.)
-                flag = self.follow_the_ball(is_kick=True)
+                flag = self.follow_the_ball(flag='goal', is_kick=True)
                 if flag and self.wm.play_mode == self.wm.PlayModes.PLAY_ON:
-                    print("check equals true")
                     check = True
+                    self.done = False
+                    self.rewards = 0.
+                    return
 
         elif self.reset_flag == 'not_in_range':
             if self.wm.ball is not None:
@@ -506,49 +563,12 @@ class Agent:
                     flag = False
                     check = False
                     while not check:
-                        # if self.send_commands:
-                        #     self.send_commands = False
-                        #     self.wm.ah.send_commands()
-
-                        # # only think if new data has arrived
-                        # if self.should_think_on_data:
-                        #     # flag that data has been processed.  this shouldn't be a race
-                        #     # condition, since the only change would be to make it True
-                        #     # before changing it to False again, and we're already going to
-                        #     # process data, so it doesn't make any difference.
-                        #     self.should_think_on_data = False
-                            
-                        #     # turn opponent to ball
-                        #     player_vel = 30
-                        #     if ball_dist <= 5:
-                        #         player_vel = 10
-                        #     self.wm.ah.dash(player_vel, ball_dir)
-                        flag = self.follow_the_ball(is_kick=True)
+                        flag = self.follow_the_ball(flag='kick', is_kick=True)
                         if flag and self.wm.play_mode == self.wm.PlayModes.PLAY_ON:
-                            print("check equals true")
                             check = True
-                        
-            else:
-                print("send these cmd")
-                if self.is_ball_measurable():
-                    ball_pos = self.wm.get_object_absolute_coords(self.wm.ball)
-                    self.wm.turn_body_to_point(ball_pos)
-                    
-                    while not self.wm.is_ball_kickable():
-                        if self.send_commands:
-                            self.send_commands = False
-                            self.wm.ah.send_commands()
-
-                        # only think if new data has arrived
-                        if self.should_think_on_data:
-                            # flag that data has been processed.  this shouldn't be a race
-                            # condition, since the only change would be to make it True
-                            # before changing it to False again, and we're already going to
-                            # process data, so it doesn't make any difference.
-                            self.should_think_on_data = False
-                            
-                            self.wm.ah.dash(50, -20)
-
+                            self.done = False
+                            self.rewards = 0.
+                            return
 
 
 if __name__ == "__main__":

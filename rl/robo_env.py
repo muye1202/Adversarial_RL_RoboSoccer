@@ -8,6 +8,7 @@ from gym.spaces import Box
 import numpy as np
 import multiprocessing as mp
 import time as py_time
+from infrastructure.sim_process import run_sim
 
 
 class RoboPlayer(Env):
@@ -33,14 +34,14 @@ class RoboPlayer(Env):
         else:
             # [move_speed move_dir kick_pow kick_dir]
             # the kick direction needs to be within view angle
-            self.action_space = Box(low=np.array([0., -np.pi, 10., -55]), \
-                                    high=np.array([100., np.pi, 40., 55]))
+            self.action_space = Box(low=np.array([0., -np.pi, 20., -100]), \
+                                    high=np.array([100., np.pi, 50., 100]))
         
         # create state space of the agent
         # the state space of the agent includes:
         # x and y position, which needs to be calculated 
         # by the visual info coming from visual sensor
-        self.observation_space = Box(low=np.array([-50., -35.]), high=np.array([50., 35.]))
+        self.observation_space = Box(low=np.array([-50., -35.]), high=np.array([50., 35.]), dtype=np.float64)
         
         # state dict: {position of the player, pos of the ball}
         self.state = np.array([0., 0.])   # {"ball": np.array([0., 0.]), "player": np.array([0., 0.])}
@@ -54,9 +55,6 @@ class RoboPlayer(Env):
         
         # role of the player
         self.side = role
-        
-        # see if the reset is for starting the match
-        self.kick_off = True
         
         # store the last kick direction
         self.last_kick_dir = 0.
@@ -74,16 +72,19 @@ class RoboPlayer(Env):
         rewards = 0
         
         self.reset_flag = self.agent.think(action=action, done=done, rewards=rewards)
-        self.opponent.follow_the_ball()
+        self.opponent.follow_the_ball(flag=None)
         
         info = {}
         return self.state, self.agent.rewards, self.agent.done, info
+
+    def render(self):
+        pass
 
     def reset(self):
         # reset the player to initial position
         # ONLY WHEN KICKING OFF THE MATCH
         print("reset agent: " + str(self.reset_flag))
-        if self.kick_off:
+        if self.agent.kick_off:
             self.agent.connect(host=self.host, port=self.port,\
                             teamname=self.teamname, unnum=self.unnum, side=WorldModel.SIDE_L)
 
@@ -93,15 +94,15 @@ class RoboPlayer(Env):
                                 side=WorldModel.SIDE_R, goalie=True)
             self.opponent.play()
             
-            self.kick_off = False
-            
-        else:
+        elif not self.agent.kick_off:
             self.opponent.reset_flag = self.reset_flag
             self.opponent.trainer()
+            self.agent.rewards = 0.
+            self.agent.done = False
 
         agent_pos = self.agent.wm.abs_coords
-        self.state = np.array(agent_pos).reshape(-1)
-                    
+        self.state = np.array([agent_pos[0], agent_pos[1]])
+
         return self.state
         
 
