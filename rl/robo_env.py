@@ -6,9 +6,6 @@ from infrastructure.world_model import WorldModel
 from gym import Env
 from gym.spaces import Box
 import numpy as np
-import multiprocessing as mp
-import time as py_time
-from infrastructure.sim_process import run_sim
 
 
 class RoboPlayer(Env):
@@ -34,8 +31,8 @@ class RoboPlayer(Env):
         else:
             # [move_speed move_dir kick_pow kick_dir]
             # the kick direction needs to be within view angle
-            self.action_space = Box(low=np.array([0., -np.pi, 20., -100]), \
-                                    high=np.array([100., np.pi, 50., 100]))
+            self.action_space = Box(low=np.array([0., -np.pi, 20., -55]), \
+                                    high=np.array([100., np.pi, 30., 55]))
         
         # create state space of the agent
         # the state space of the agent includes:
@@ -83,7 +80,7 @@ class RoboPlayer(Env):
     def reset(self):
         # reset the player to initial position
         # ONLY WHEN KICKING OFF THE MATCH
-        print("reset agent: " + str(self.reset_flag))
+        # print("reset agent: " + str(self.reset_flag))
         if self.agent.kick_off:
             self.agent.connect(host=self.host, port=self.port,\
                             teamname=self.teamname, unnum=self.unnum, side=WorldModel.SIDE_L)

@@ -47,6 +47,7 @@ class Agent:
         self.done = False
         self.process_done = False
         self.reset_flag = None
+        self.is_in_right_side = True
         
         # see if the reset is for starting the match
         self.kick_off = True
@@ -369,6 +370,13 @@ class Agent:
                 
             # get current position tuple: ( , )
             curr_pos = self.wm.abs_coords
+            # always in the enemy side of the field
+            
+            if curr_pos[0] < -5:
+                self.is_in_right_side = False
+                self.take_the_ball_to((5., 0.))
+            else:
+                self.is_in_right_side = True
 
             ## get enemy goal distance and dir relative to player
             ## [dist, dir]
@@ -392,8 +400,7 @@ class Agent:
                 
                 # determine if the ball is in range
                 # by checking if play_mode is drop ball
-                ball_out_range = (self.wm.is_kick_in() or self.wm.is_goal_kick()
-                                  or self.wm.is_dead_ball_them())
+                ball_out_range = (self.wm.is_kick_in() or self.wm.is_goal_kick())
 
                 # determine if the player comes nearer to the goal
                 if len(goal_to_player) == 4:
@@ -407,6 +414,9 @@ class Agent:
                         goal_dist = goal.distance
                 
                 is_in_shoot_range = (goal_dist < 20.)
+                
+                # stop if player stamina is smaller than 1
+                stamina = self.wm.get_stamina()
 
                 ### REWARDS ###
                 # For attackers:
@@ -441,12 +451,18 @@ class Agent:
                 elif is_in_shoot_range:
                     rewards += 2
                 
+                elif stamina < 1:
+                    rewards -= 5
+                    done = True
+                    
+                elif not self.is_in_right_side:
+                    rewards -= 1
+                
                 else:
                     rewards -= 0.5
         
         self.rewards = rewards
         self.done = done
-        self.process_done = True
         self.kick_off = False
 
         return reset_flag
@@ -505,7 +521,6 @@ class Agent:
 
                 if self.wm.play_mode == world_model.WorldModel.PlayModes.PLAY_ON:
                     check = True
-                    print("in pass to function")
                         
         return True
 
@@ -524,13 +539,13 @@ class Agent:
             self.should_think_on_data = False
             
             if self.wm.ball.distance is None:
-                self.wm.ah.turn(20)
+                self.wm.ah.turn(30)
 
             if self.wm.ball is not None:
                 if self.is_ball_measurable():
-                    if self.wm.ball.distance >= 20:
+                    if self.wm.ball.distance >= 10:
                         self.wm.turn_body_to_object(self.wm.ball)
-                        self.wm.ah.dash(70, self.wm.ball.direction)
+                        self.wm.ah.dash(60, self.wm.ball.direction)
                     else:
                         if not is_kick:
                             self.wm.turn_body_to_object(self.wm.ball)

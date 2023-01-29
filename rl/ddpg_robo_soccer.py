@@ -289,9 +289,9 @@ def policy(state, noise_object = None):
     sampled_actions = sampled_actions.numpy() + noise
 
     # We make sure action is within bounds
-    outputs = sampled_actions[0] + 1.0
-    outputs[2] = np.clip(outputs[2]*kickpow_upper_bound, kickpow_lower_bound, kickpow_upper_bound)   # kick power
-    outputs[3] = np.clip(outputs[3]*kickdir_high, kickdir_low, kickdir_high) # kick direction
+    outputs = sampled_actions[0]
+    outputs[2] = np.clip((outputs[2]+1.0)*kickpow_upper_bound, kickpow_lower_bound, kickpow_upper_bound)   # kick power
+    outputs[3] = np.clip((outputs[3])*kickdir_high, kickdir_low, kickdir_high) # kick direction
 
     return np.squeeze(outputs)
 

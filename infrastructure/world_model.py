@@ -690,7 +690,7 @@ class ServerParameters:
         self.game_over_wait = 100
         self.goal_width = 14.02
         self.goalie_max_moves = 2
-        self.half_time = 300
+        self.half_time = 100000000
         self.hear_decay = 1
         self.hear_inc = 1
         self.hear_max = 1
