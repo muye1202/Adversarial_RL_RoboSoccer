@@ -20,7 +20,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'robo_sim = robo_simulator.simulator:main'
+            'robo_sim = robo_simulator.simulator:main',
+            'soccer_field = robo_simulator.field:main'
         ],
     },
 )
