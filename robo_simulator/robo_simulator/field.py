@@ -19,16 +19,58 @@ class field(Node):
     def __init__(self):
         super().__init__("field")
         
-        self.pub_marker = self.create_publisher(MarkerArray, "/visualization_marker_array", 1)
-        # self.pub_brick_marker = self.create_publisher(Marker, "/visualization_marker", 1)
+        self.pub_marker = self.create_publisher(MarkerArray, "~/visualization_marker_array", 1)
+        self.kick_sub = self.create_subscription(Point, "~/kick", self.kick_update, 10)
+        self.pub_ball_marker = self.create_publisher(Marker, "~/visualization_marker", 1)
         
-        timer_period = 0.01
-        self.timer = self.create_timer(timer_period, self.timer_callback)
+        self.timer_period = 0.01
+        self.timer = self.create_timer(self.timer_period, self.timer_callback)
         
         # generate marker for arena
         self.marker_arr = MarkerArray()
         self.marker_generate()
         self.broadcaster = TransformBroadcaster(self)
+        
+        # publish marker for ball
+        ## the ball will move shorter distances 
+        ## as time progresses and then stops
+        self.kick_power = 40.
+        self.kick_dir = 0.
+        self.ball_posx = 0.1
+        self.ball_posy = 0.
+        self.last_vel = 0.
+        
+        self.MAX_KICK_VEL = 10
+        self.MAX_STRENGTH = 100
+        self.BALL_DECAY = 0.02
+
+        # marker for soccer ball
+        self.ball = Marker()
+        self.ball_marker()
+        
+    def kick_update(self, point: Point):
+        """kick: [pow, dir]"""
+        self.kick_power = point.x
+        self.kick_dir = point.y
+        
+        # when receiving new effective kick
+        # the ball will move the farthest this time
+        self.last_vel = (self.kick_power/self.MAX_STRENGTH)*self.MAX_KICK_VEL
+
+    def calc_ball_pos(self, last_vel):
+        """Calculate ball position at each time step"""
+        # update the ball position
+        new_x = self.last_vel*self.timer_period*math.cos(self.kick_dir)
+        new_y = self.last_vel*self.timer_period*math.sin(self.kick_dir)
+        
+        self.ball_posx += new_x
+        self.ball_posy += new_y
+
+        # the ball moves farthest at first kick
+        # then decays to zero.
+        # calc new moving dist from last moving dist.
+        new_vel = last_vel*self.BALL_DECAY
+        self.last_vel = new_vel
         
     def marker_generate(self):
         """Create markers array for arena."""
@@ -140,10 +182,34 @@ class field(Node):
             y_pos += 1
 
             self.marker_arr.markers.append(marker_shape)
-            
+    
+    def ball_marker(self):
+        self.ball.header.frame_id = "nusim/world"
+        self.ball.ns = "soccer"
+        self.ball.id = 0
+        self.ball.type = 2
+        self.ball.action = 0
+        self.ball.color.a = 1.
+        self.ball.color.r = 0.
+        self.ball.color.g = 1.
+        self.ball.color.b = 0.
+        self.ball.scale.x = 0.12
+        self.ball.scale.y = 0.12
+        self.ball.scale.z = 0.12
+        self.ball.frame_locked = False
+        self.ball.pose.position.x = self.ball_posx
+        self.ball.pose.position.y = self.ball_posy
+    
     def timer_callback(self):
         # publish arena marker
         self.pub_marker.publish(self.marker_arr)
+        
+        # update ball position at each cycle
+        # get kick pow and dir from subsriber
+        self.calc_ball_pos(self.last_vel)
+        self.get_logger().info("ball velocity: " + str(self.last_vel))
+        self.ball_marker()
+        self.pub_ball_marker.publish(self.ball)
 
 
 def main(args=None):
@@ -155,125 +221,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-    
-
-# publish brick frame
-# time = self.get_clock().now().to_msg()
-# odom_brick = TransformStamped()
-# odom_brick.header.frame_id = "world"
-# odom_brick.header.stamp = time
-# odom_brick.child_frame_id = "brick"
-
-# # if the brick is falling, change its height
-# if self.brick_state == State.FALLING:
-#     # the brick is falling with acceleration
-#     brick_time = t.time()
-#     falling_dist = 0.5 * self.g * (brick_time - self.start_time)**2
-#     self.curr_height = self.og_z - falling_dist
-#     odom_brick.transform.translation.z = self.curr_height
-#     odom_brick.transform.translation.x = self.og_x
-#     odom_brick.transform.translation.y = self.og_y
-#     self.broadcaster.sendTransform(odom_brick)
-
-# # distance between brick and platform
-# d = math.sqrt((self.curr_height - self.platform_h)**2 +
-#               (self.og_x - self.turtle_pos.x)**2 + (self.og_y - self.turtle_pos.y)**2)
-# # determine whether brick touches platform OR ground
-# if d <= 0.3 and not self.start_tilting:
-#     self.brick_state = State.TOUCH
-
-#     state_change = Empty()
-#     self.state_pub.publish(state_change)
-
-# elif self.curr_height <= 0.2 and self.brick_state == State.FALLING:
-
-#     self.brick_state = State.ON_GROUND
-
-# # determine if platform starts tilting
-# # only enters once
-# if (self.tilt_platform != 0) and self.brick_state == State.TOUCH:
-
-#     if not self.start_tilting:
-
-#         self.start_tilt = t.time()
-#         self.brick_state = State.TILT
-#         self.tilt_start_y = self.brick_y
-#         self.tilt_start_z = self.temp_h
-#         self.start_tilting = True
-
-# # generate brick marker with its position
-# # calculate brick pos with platform angle
-# if self.brick_state == State.TILT:
-
-#     brick_time = t.time()
-#     # re-orient brick
-#     self.platform_joint_state = self.tilt_platform
-#     self.brick_orientation = self.platform_joint_state
-
-#     if self.platform_joint_state < 0:
-#         direction = 1
-#     else:
-#         direction = -1
-
-#     y_s = direction*0.5*(self.g * math.sin(abs(self.platform_joint_state)) * (brick_time -
-#                          self.start_tilt)**2) * math.cos(self.platform_joint_state)
-#     self.brick_y = self.tilt_start_y + y_s
-#     self.y_slide = abs(y_s)
-
-#     z_s = 0.5*(self.g * math.sin(abs(self.platform_joint_state)) * (brick_time -
-#                self.start_tilt)**2) * math.sin(abs(self.platform_joint_state))
-#     self.curr_height = self.tilt_start_z - z_s
-#     self.z_slide = z_s
-
-#     slide_dist = math.sqrt(self.z_slide**2 + self.y_slide**2)
-
-#     if slide_dist > self.platform_r + 0.5*self.brick_size_y:
-#         self.brick_state = State.CLEAR
-
-# self.brick_marker = Marker()
-# brick_x = self.brick_x
-# brick_y = self.brick_y
-
-# self.brick_marker.header.frame_id = "/world"
-# self.brick_marker.ns = "brick"
-# self.brick_marker.id = 0
-# self.brick_marker.type = 1
-# self.brick_marker.action = 0
-# self.brick_marker.color.a = 1.
-# self.brick_marker.color.r = 0.
-# self.brick_marker.color.g = 1.
-# self.brick_marker.color.b = 0.
-# self.brick_marker.scale.x = self.brick_size_x
-# self.brick_marker.scale.y = self.brick_size_y
-# self.brick_marker.scale.z = self.brick_size_z
-# self.brick_marker.frame_locked = False
-# self.brick_marker.pose.position.x = brick_x
-# self.brick_marker.pose.position.y = brick_y
-
-# if self.brick_state == State.STOPPED:
-#     self.brick_marker.pose.position.z = self.og_z
-#     self.brick_marker.pose.position.x = self.og_x
-#     self.brick_marker.pose.position.y = self.og_y
-# elif self.brick_state == State.ON_GROUND:
-#     self.brick_marker.pose.position.z = 0.0
-#     self.brick_marker.pose.position.x = self.og_x
-#     self.brick_marker.pose.position.y = self.og_y
-# elif self.brick_state == State.FALLING:
-#     self.brick_marker.pose.position.z = self.curr_height
-# elif self.brick_state == State.TILT:
-#     self.brick_marker.pose.position.z = self.curr_height
-#     self.brick_marker.pose.orientation.x = self.brick_orientation
-
-# elif self.brick_state == State.TOUCH:
-#     self.brick_marker.pose.position.z = self.platform_h + self.brick_marker.scale.z/2
-#     self.brick_marker.pose.position.x = self.turtle_pos.x
-#     self.brick_marker.pose.position.y = self.turtle_pos.y
-
-#     self.brick_x = self.turtle_pos.x
-#     self.brick_y = self.turtle_pos.y
-
-#     self.temp_h = self.platform_h + self.brick_marker.scale.z/2
-#     odom_brick.transform.translation.z = self.temp_h
-#     odom_brick.transform.translation.x = self.turtle_pos.x
-#     odom_brick.transform.translation.y = self.turtle_pos.y
-#     self.broadcaster.sendTransform(odom_brick)

@@ -18,11 +18,14 @@ class rs_simulator(Node):
     def __init__(self):
         super().__init__("rs_simulator")
         
-        timer_period = 0.01
+        timer_period = 0.05
         self.timer = self.create_timer(timer_period, self.timer_callback)
         
         # receive the velocity for the robot
         self.vel_sub = self.create_subscription(Pose2D, '~/player_vel', self.vel_callback, 10)
+        
+        # send kick cmd
+        self.kick_pub = self.create_publisher(Point, "field/kick", 10)
         
         # publish the location of the robot
         self.broadcaster = TransformBroadcaster(self)
@@ -33,6 +36,7 @@ class rs_simulator(Node):
         self.posx = 0.
         self.posy = 0.
         self.ang = 0.
+        self.kick = Point()
         
     def vel_callback(self, pose: Pose2D):
         self.posx = pose.x
@@ -51,7 +55,11 @@ class rs_simulator(Node):
         world_robot.transform.translation.x = self.startx
         world_robot.transform.translation.y = self.starty
         self.broadcaster.sendTransform(world_robot)
-
+        
+        # TEST: send kick cmd -> [pow, dir]
+        self.kick.x = 20.
+        self.kick.y = 0.
+        self.kick_pub.publish(self.kick)
 
 def main(args=None):
     rclpy.init(args=args)
