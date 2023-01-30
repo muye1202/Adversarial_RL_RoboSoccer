@@ -48,6 +48,7 @@ class Agent:
         self.process_done = False
         self.reset_flag = None
         self.is_in_right_side = True
+        self.trainer_count = 0
         
         # see if the reset is for starting the match
         self.kick_off = True
@@ -304,27 +305,35 @@ class Agent:
             
             return (kick_to_pos_x, kick_to_pos_y)
 
-    def move_to_kick_ball(self, kick_power, kick_dir, vel):
+    def move_to_kick_ball(self, kick_power, kick_dir, vel, role="agent"):
         ## the player should move to the ball
         ## with a constant speed in order to 
         ## perform meaningful dribbling and kicking
         ## slow down the player as it approaches
-        player_vel = vel
+        if role == "agent":
+            player_vel = vel
+        else:
+            player_vel = vel-30
+
         speed_dir = 0.
         if self.wm.ball is not None:
             if self.is_ball_measurable():
                 speed_dir = self.wm.ball.direction
                 if self.wm.ball.distance <= 5:
-                    player_vel = 60
+                    if role == "agent":
+                        player_vel = 60
+                    else:
+                        player_vel = 30
 
         self.wm.ah.turn(speed_dir)
+        self.wm.align_neck_with_body()
         self.wm.ah.dash(player_vel, speed_dir)
         self.last_kick_dir = speed_dir
 
-        if self.wm.is_ball_kickable():
+        if self.wm.is_ball_kickable() and role == "agent":
             self.wm.ah.kick(kick_power, kick_dir)
 
-    def think(self, action, done, rewards):
+    def think(self, action, done, rewards, role="trainer"):
         """
         Performs a single step of thinking for our agent. Gets called on every
         iteration of our think loop.
@@ -361,20 +370,23 @@ class Agent:
                 self.wm.ah.turn(30)
 
             elif self.wm.ball is not None and not self.wm.is_before_kick_off():
-                kick_power = action[2]
-                kick_dir = action[3]
-                self.move_to_kick_ball(kick_power=kick_power, kick_dir=kick_dir, vel=70.)
+                if not self.is_in_right_side:
+                    while self.take_the_ball_to(point=(0., 0.)):
+                        pass
+                else:
+                    kick_power = action[2]
+                    kick_dir = action[3]
+                    self.move_to_kick_ball(kick_power=kick_power, kick_dir=kick_dir, vel=70., role=role)
             
             ############# GET UPDATES ###########
             ##########################################
                 
             # get current position tuple: ( , )
             curr_pos = self.wm.abs_coords
-            # always in the enemy side of the field
             
-            if curr_pos[0] < -5:
+            # always in the enemy side of the field
+            if curr_pos[0] < -5 and role == "agent":
                 self.is_in_right_side = False
-                self.take_the_ball_to((5., 0.))
             else:
                 self.is_in_right_side = True
 
@@ -384,7 +396,7 @@ class Agent:
                 if goal.goal_id == enemy_goal_id:
                     goal_to_player.append(goal.distance)
                     goal_to_player.append(goal.direction)
-                    
+       
             ## get dist and dir of the ball to player
             ## [dist, dir]
             ## UPDATE ONLY BALL IS NOT NONE
@@ -400,7 +412,9 @@ class Agent:
                 
                 # determine if the ball is in range
                 # by checking if play_mode is drop ball
-                ball_out_range = (self.wm.is_kick_in() or self.wm.is_goal_kick())
+                ball_out_range = (self.wm.is_kick_in() or
+                                  self.wm.is_goal_kick() or 
+                                  self.wm.is_dead_ball_them())
 
                 # determine if the player comes nearer to the goal
                 if len(goal_to_player) == 4:
@@ -414,9 +428,9 @@ class Agent:
                         goal_dist = goal.distance
                 
                 is_in_shoot_range = (goal_dist < 20.)
-                
-                # stop if player stamina is smaller than 1
-                stamina = self.wm.get_stamina()
+
+                # # stop if player stamina is smaller than 1
+                # stamina = self.wm.get_stamina()
 
                 ### REWARDS ###
                 # For attackers:
@@ -435,37 +449,44 @@ class Agent:
                 
                 # attacking side
                 # NOTE: implement attacker reward 1 5 6 7 8.
-                if self.wm.is_scored():
-                    rewards += 10
-                    done = True
-                    reset_flag = 'goal'
+                if role is not "trainer":
+                    if self.wm.is_scored():
+                        rewards = 10
+                        # self.wm.kick_count = 0
+                        done = True
+                        reset_flag = 'goal'
 
-                elif ball_out_range:
-                    rewards -= 5
-                    reset_flag = 'not_in_range'
-                    done = True
+                    elif ball_out_range:
+                        rewards -= 5
+                        reset_flag = 'not_in_range'
+                        # self.wm.kick_count = 0
+                        done = True
 
-                elif is_nearer_to_goal:
-                    rewards += 1
+                    elif is_nearer_to_goal:
+                        rewards += 1
 
-                elif is_in_shoot_range:
-                    rewards += 2
-                
-                elif stamina < 1:
-                    rewards -= 5
-                    done = True
+                    elif is_in_shoot_range:
+                        rewards += 2
+                        
+                    elif not self.is_in_right_side:
+                        rewards -= 1
+                        
+                    # elif self.wm.kick_count > 10:
+                    #     rewards -= 1
+                    #     self.wm.kick_count = 0
+                    #     done = True
                     
-                elif not self.is_in_right_side:
-                    rewards -= 1
-                
-                else:
-                    rewards -= 0.5
+                    else:
+                        rewards -= 0.5
+        
+        # if self.wm.kick_count >= 10:
+        #     self.wm.kick_count = 0
         
         self.rewards = rewards
         self.done = done
         self.kick_off = False
 
-        return reset_flag
+        return reset_flag, self.rewards, self.done
 
     def take_the_ball_to(self, point):
         """
@@ -493,12 +514,13 @@ class Agent:
                     dist_diff = self.wm.euclidean_distance(ball_pos, point)
                     if dist_diff <= 10:
                         check = True
+                        
+        return True
 
-    def pass_to_point(self, player=None):
+    def pass_to_player(self, side, unum):
         """
         Pass the ball to a player pos 
         """
-        print("in pass to function")
         check = False
         while not check:
             if self.send_commands:
@@ -510,21 +532,29 @@ class Agent:
                 self.should_think_on_data = False
 
                 # if no player in sight, turn body
-                if self.wm.get_player_coords('l', unnum=1) is None:
-                    self.wm.ah.turn(50)
+                if self.wm.get_player_coords(side, unnum=unum) is None:
+                    self.wm.ah.turn(30)
                     
                 else:
                     # get the player pos in sight
-                    pass_to = self.wm.get_player_coords('l', unnum=1)
+                    pass_to = self.wm.get_player_coords(side, unnum=unum)
                     if pass_to is not None:
-                        self.wm.kick_to(point=pass_to, extra_power=0.)
+                        self.wm.kick_to(point=pass_to, extra_power=-0.3)
+
+                    # self.wm.ah.kick(20, 0.)
+                # curr_pos = self.wm.abs_coords
+                # if self.wm.is_ball_kickable():
+                #     self.wm.kick_to(point=(curr_pos[0], curr_pos[1] + 10))
+                # else:
+                #     self.wm.ah.dash(50, self.wm.ball.direction)
 
                 if self.wm.play_mode == world_model.WorldModel.PlayModes.PLAY_ON:
                     check = True
-                        
+
         return True
 
-    def follow_the_ball(self, flag, is_kick=False):
+    def follow_the_ball(self, is_kick=False):
+        self.trainer_count += 1
         # turn the body of the opponent to ball
         if self.send_commands:
             self.send_commands = False
@@ -532,16 +562,14 @@ class Agent:
 
         # only think if new data has arrived
         if self.should_think_on_data:
-            # flag that data has been processed.  this shouldn't be a race
-            # condition, since the only change would be to make it True
-            # before changing it to False again, and we're already going to
-            # process data, so it doesn't make any difference.
             self.should_think_on_data = False
             
-            if self.wm.ball.distance is None:
+            if self.wm.ball.distance is None or self.wm.ball.direction is None:
                 self.wm.ah.turn(30)
+                self.wm.align_neck_with_body()
 
-            if self.wm.ball is not None:
+            elif self.wm.ball is not None:
+                # print("follow the ball " + str(self.trainer_count))
                 if self.is_ball_measurable():
                     if self.wm.ball.distance >= 10:
                         self.wm.turn_body_to_object(self.wm.ball)
@@ -550,12 +578,21 @@ class Agent:
                         if not is_kick:
                             self.wm.turn_body_to_object(self.wm.ball)
                         elif is_kick and not self.wm.is_ball_kickable()\
-                             and self.wm.play_mode != self.wm.PlayModes.IS_GOAL:
+                            and self.wm.play_mode != self.wm.PlayModes.IS_GOAL:
                             self.wm.ah.dash(50, self.wm.ball.direction)
                         elif is_kick and self.wm.is_ball_kickable():
-                                if self.pass_to_point():
+                                if self.pass_to_player(side='r', unum=2):
                                     return True
-                            
+                                
+                else:
+                    # print("follow the player " + str(self.trainer_count))
+                    player_coord = self.wm.get_player_coords(side='l', unnum=1)
+                    if player_coord is not None:
+                        self.wm.turn_body_to_point(player_coord)
+                        self.wm.ah.dash(50, 0.)
+                    else:
+                        self.wm.ah.dash(50, 0.)
+
         return False
 
     def trainer(self):
@@ -565,7 +602,7 @@ class Agent:
             flag = False
             check = False
             while not check:
-                flag = self.follow_the_ball(flag='goal', is_kick=True)
+                flag = self.follow_the_ball(is_kick=True)
                 if flag and self.wm.play_mode == self.wm.PlayModes.PLAY_ON:
                     check = True
                     self.done = False
@@ -578,7 +615,7 @@ class Agent:
                     flag = False
                     check = False
                     while not check:
-                        flag = self.follow_the_ball(flag='kick', is_kick=True)
+                        flag = self.follow_the_ball(is_kick=True)
                         if flag and self.wm.play_mode == self.wm.PlayModes.PLAY_ON:
                             check = True
                             self.done = False

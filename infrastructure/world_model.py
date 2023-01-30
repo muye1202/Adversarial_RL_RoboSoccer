@@ -362,7 +362,7 @@ class WorldModel:
         for player in self.players:
             if player.side is side and player.uniform_number is unnum:
                 pos = self.get_object_absolute_coords(player)
-                
+
         return pos
 
     def is_before_kick_off(self):
@@ -430,7 +430,8 @@ class WorldModel:
         """
         Check if either side scored
         """
-        return (self.play_mode == WorldModel.PlayModes.IS_GOAL)
+        return (self.play_mode == WorldModel.PlayModes.IS_GOAL or
+                self.play_mode == WorldModel.PlayModes.KICK_OFF_R)
 
     def is_ball_kickable(self):
         """

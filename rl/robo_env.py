@@ -10,7 +10,8 @@ import numpy as np
 
 class RoboPlayer(Env):
     
-    def __init__(self, role: str, agent: Agent, opponent: Agent, host, port, teamname, unnum=1):
+    def __init__(self, role: str, agent: Agent, opponent: Agent, helper: Agent,
+                 host, port, teamname, unnum=1):
         # variables needed for reset()
         self.host = host
         self.port = port
@@ -50,6 +51,8 @@ class RoboPlayer(Env):
         # opponent agent
         self.opponent = opponent
         
+        self.helper = helper
+        
         # role of the player
         self.side = role
         
@@ -63,16 +66,20 @@ class RoboPlayer(Env):
         self.prevent_goal_kick = False
         
         self.reset_flag = None
+        
+        self.ball_pos = None
     
     def step(self, action):
         done = False
-        rewards = 0
+        rewards = self.agent.rewards
         
-        self.reset_flag = self.agent.think(action=action, done=done, rewards=rewards)
-        self.opponent.follow_the_ball(flag=None)
+        self.reset_flag, rewards, done = self.agent.think(action=action, done=done, rewards=rewards, role="agent")
+        self.opponent.think(action=action, done=done, rewards=rewards, role="trainer")
+        self.helper.think(action=action, done=done, rewards=rewards, role="helper")
+        # self.opponent.follow_the_ball()
         
         info = {}
-        return self.state, self.agent.rewards, self.agent.done, info
+        return self.state, rewards, done, info
 
     def render(self):
         pass
@@ -90,10 +97,15 @@ class RoboPlayer(Env):
                                 teamname='enemy', unnum=self.unnum,\
                                 side=WorldModel.SIDE_R, goalie=True)
             self.opponent.play()
+            self.helper.connect(host=self.host, port=self.port,\
+                                teamname='enemy', unnum=2,\
+                                side=WorldModel.SIDE_R, goalie=False)
+            self.helper.play()
             
         elif not self.agent.kick_off:
             self.opponent.reset_flag = self.reset_flag
             self.opponent.trainer()
+            self.helper.pass_to_player(side='l', unum=1)
             self.agent.rewards = 0.
             self.agent.done = False
 
@@ -101,5 +113,5 @@ class RoboPlayer(Env):
         self.state = np.array([agent_pos[0], agent_pos[1]])
 
         return self.state
-        
+
 

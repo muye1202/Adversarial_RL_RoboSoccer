@@ -7,3 +7,7 @@ run_sim.sh
 parsed_msgs.txt
 sim_process.py
 run_monitor.sh
+test.py
+build
+install
+log

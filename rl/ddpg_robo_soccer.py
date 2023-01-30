@@ -56,14 +56,15 @@ We will use the `upper_bound` parameter to scale our actions later.
 teamname = "my_team"
 player = agent.Agent()
 enemy = agent.Agent()
-
+helper = agent.Agent()
 # see training progress in tensorboard
 logdir = 'logs_training'
 
 if not os.path.exists(logdir):
     os.makedirs(logdir)
 
-env = RoboPlayer(role='attacker', agent=player, opponent=enemy, host="localhost", port=6000, teamname=teamname)
+env = RoboPlayer(role='attacker', agent=player, opponent=enemy, helper=helper,
+                 host="localhost", port=6000, teamname=teamname)
 
 num_states = env.observation_space.shape[0]
 print("Size of State Space ->  {}".format(num_states))
