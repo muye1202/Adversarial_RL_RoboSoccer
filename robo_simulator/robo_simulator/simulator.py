@@ -45,7 +45,7 @@ class rs_simulator(Node):
         
     def robot_callback(self, robo_pos: Pose2D):
         self.robot_pos = robo_pos
-        self.get_logger().info("robot direction: " + str(robo_pos.theta))
+        # self.get_logger().info("received direction: " + str(math.degrees(robo_pos.theta)))
         
     def player_to_ball_dist(self):
         
@@ -69,35 +69,36 @@ class rs_simulator(Node):
         dely = ball.y - robot.y
         delx = ball.x - robot.x
         ball_to_robot = math.degrees(math.atan2(dely, delx))
-        robot_facing = self.robot_pos.theta
+        # robot_facing = math.degrees(self.robot_pos.theta)
         
-        self.get_logger().info("robot direction: " + str(robot_facing) + " " + str(ball_to_robot))
+        a = ball_to_robot
+        # self.get_logger().info("turning angle: " + str(robot_facing))
         
-        if robot_facing <= 0 and 0 <= ball_to_robot <= 90:
-            if -(180-ball_to_robot) < robot_facing:
-                return abs(robot_facing) + ball_to_robot
-            else:
-                return -(360 - abs(robot_facing) - ball_to_robot)
+        # if robot_facing <= 0 and 0 <= ball_to_robot <= 90:
+        #     if ball_to_robot - robot_facing < 180:
+        #         return abs(robot_facing) + ball_to_robot
+        #     else:
+        #         return -(360 - abs(robot_facing) - ball_to_robot)
             
-        elif robot_facing <= 0 and 90 < ball_to_robot <= 180:
-            if ball_to_robot - robot_facing < 180:
-                return ball_to_robot - robot_facing
-            else:
-                return -(360-ball_to_robot - robot_facing)
+        # elif robot_facing <= 0 and 90 < ball_to_robot <= 180:
+        #     if ball_to_robot - robot_facing < 180:
+        #         return ball_to_robot - robot_facing
+        #     else:
+        #         return -(360 - ball_to_robot + robot_facing)
             
-        elif 180 >= robot_facing >= 0 and 0 <= ball_to_robot <= 180:
-            if robot_facing > ball_to_robot:
-                return -(robot_facing-ball_to_robot)
-            else:
-                return ball_to_robot - robot_facing
+        # elif 180 >= robot_facing >= 0 and 0 <= ball_to_robot <= 180:
+        #     if robot_facing > ball_to_robot:
+        #         return -(robot_facing-ball_to_robot)
+        #     else:
+        #         return ball_to_robot - robot_facing
         
-        elif 180 >= robot_facing >= 0 and ball_to_robot <= 0:
-            if abs(ball_to_robot) + robot_facing < 180:
-                return -abs(ball_to_robot) - robot_facing
-            else:
-                return 360 - (abs(ball_to_robot) + robot_facing)
+        # elif 180 >= robot_facing >= 0 and ball_to_robot <= 0:
+        #     if abs(ball_to_robot) + robot_facing < 180:
+        #         return -abs(ball_to_robot) - robot_facing
+        #     else:
+        #         return 360 - (abs(ball_to_robot) + robot_facing)
             
-        return 0
+        return a
         
     def follow_ball(self, ball_pos: Point):
         # dash towards the ball
@@ -116,7 +117,7 @@ class rs_simulator(Node):
         # dash_cmd.y = 30.
         # self.vel_pub.publish(dash_cmd)
         
-        # TEST: kick the ball and run to it
+        # TEST PASSED: kick the ball and run to it
         if self.player_to_ball_dist() <= 0.1:
             self.robo_state = State.BALL_KICKABLE
 

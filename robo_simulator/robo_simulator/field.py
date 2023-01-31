@@ -153,7 +153,7 @@ class field(Node):
         z_pos = 0.
 
         marker_shape = Marker()
-        marker_shape.header.frame_id = "nusim/world"
+        marker_shape.header.frame_id = "purple/base_footprint"
         marker_shape.ns = "long_side_0"
         marker_shape.id = 0
         marker_shape.action = 0
@@ -174,7 +174,7 @@ class field(Node):
         self.marker_arr.markers.append(marker_shape)
 
         marker_shape = Marker()
-        marker_shape.header.frame_id = "nusim/world"
+        marker_shape.header.frame_id = "purple/base_footprint"
         marker_shape.ns = "long_side_1"
         marker_shape.id = 1
         marker_shape.action = 0
@@ -196,7 +196,7 @@ class field(Node):
 
         # 1st y side of the arena
         marker_shape = Marker()
-        marker_shape.header.frame_id = "nusim/world"
+        marker_shape.header.frame_id = "purple/base_footprint"
         marker_shape.ns = "y_side_0"
         marker_shape.id = 2
         marker_shape.action = 0
@@ -218,7 +218,7 @@ class field(Node):
 
         # goal side marker up
         marker_shape = Marker()
-        marker_shape.header.frame_id = "nusim/world"
+        marker_shape.header.frame_id = "purple/base_footprint"
         marker_shape.ns = "goal_up"
         marker_shape.id = 3
         marker_shape.action = 0
@@ -240,7 +240,7 @@ class field(Node):
         
         # goal side marker down
         marker_shape = Marker()
-        marker_shape.header.frame_id = "nusim/world"
+        marker_shape.header.frame_id = "purple/base_footprint"
         marker_shape.ns = "goal_down"
         marker_shape.id = 3
         marker_shape.action = 0
@@ -261,7 +261,7 @@ class field(Node):
         self.marker_arr.markers.append(marker_shape)
     
     def ball_marker(self):
-        self.ball.header.frame_id = "nusim/world"
+        self.ball.header.frame_id = "purple/base_footprint"
         self.ball.ns = "soccer"
         self.ball.id = 0
         self.ball.type = 2
@@ -310,8 +310,8 @@ class field(Node):
         time = self.get_clock().now().to_msg()
         world_robot = TransformStamped()
         world_robot.header.stamp = time
-        world_robot.header.frame_id = "nusim/world"
-        world_robot.child_frame_id = "purple/base_footprint"
+        world_robot.header.frame_id = "purple/base_footprint"
+        world_robot.child_frame_id = "purple/base_link"
         world_robot.transform.translation.x = self.posx
         world_robot.transform.translation.y = self.posy
         world_robot.transform.rotation.x = self.quaternion.x
@@ -324,7 +324,7 @@ class field(Node):
         r_pos = Pose2D()
         r_pos.x = self.posx
         r_pos.y = self.posy
-        r_pos.theta = math.degrees(self.ang)
+        r_pos.theta = self.ang
         self.robot_pos_pub.publish(r_pos)
         
         ball_pos = Point()

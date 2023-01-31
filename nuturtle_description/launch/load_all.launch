@@ -1,0 +1,36 @@
+<launch>
+    <include file="$(find-pkg-share nuturtle_description)/launch/load_one.launch.py">
+        <arg name="robot_color" value="purple"/>
+        <arg name='use_rviz' value='false'/>
+        <arg name='xpos' value='0.0'/>
+        <arg name='ypos' value='-1.0'/>
+        <arg name='zpos' value='0.0'/>
+    </include>
+
+    <include file="$(find-pkg-share nuturtle_description)/launch/load_one.launch.py">
+        <arg name="robot_color" value="red"/>
+        <arg name='use_rviz' value='false'/>
+        <arg name='xpos' value='0.25'/>
+        <arg name='ypos' value='0.0'/>
+        <arg name='zpos' value='0.0'/>
+    </include>
+
+    <include file="$(find-pkg-share nuturtle_description)/launch/load_one.launch.py">
+        <arg name="robot_color" value="green"/>
+        <arg name='use_rviz' value='false'/>
+        <arg name='xpos' value='0.0'/>
+        <arg name='ypos' value='0.5'/>
+        <arg name='zpos' value='0.0'/>
+    </include>
+
+    <include file="$(find-pkg-share nuturtle_description)/launch/load_one.launch.py">
+        <arg name="robot_color" value="blue"/>
+        <arg name='use_rviz' value='false'/>
+        <arg name='xpos' value='-0.75'/>
+        <arg name='ypos' value='0.0'/>
+        <arg name='zpos' value='0.0'/>
+    </include>
+
+    <!-- <node name='rviz2' pkg='rviz2' type='str' args='-d basic_all.rviz'/> -->
+    <node pkg='rviz2' exec='rviz2' name='rviz2' output='screen' args='-d $(find-pkg-share nuturtle_description)/rviz/basic_all.rviz'/>
+</launch>
