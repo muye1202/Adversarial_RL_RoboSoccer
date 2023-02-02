@@ -46,6 +46,10 @@ class RoboPlayer(Node):
         # last ball position
         self.last_ball_dist = self.arena_size_x
         
+        #######################################
+        timer_period = 0.01
+        self.timer_ = self.create_timer(timer_period, self.timer_callback)
+        
         # publish reset command to the simulator
         self.reset_pub = self.create_publisher(Empty, "~/reset_flag", 10)
 
@@ -54,8 +58,21 @@ class RoboPlayer(Node):
         self.robot_sub = self.create_subscription(Pose2D, "field/robot_pos", self.robot_callback, 10)
         
         # publish step function update
-        self.step_update_pub = self.create_publisher(Info, "simulator/step_info", 10)
+        self.step_update_pub = self.create_publisher(Info, "rs_simulator/step_info", 1)
         self.step_info = Info()
+        
+        # see if new cmd has been sent
+        self.state_sub = self.create_subscription(Empty, "~/update", self.update_callback, 10)
+        self.step_state = False
+    
+    def timer_callback(self):
+        if self.step_state:
+            self.step()
+            
+            self.step_state = False
+    
+    def update_callback(self, _):
+        self.step_state = True
     
     def ball_callback(self, ball_pos: Point):
         self.ball_pos = ball_pos
@@ -72,6 +89,7 @@ class RoboPlayer(Node):
         done = False
         rewards = 0.0
         
+        # self.get_logger().info("robot position: " + str(self.robot_pos.x) + " " + str(self.robot_pos.y))
         ### REWARDS ###
         # For attackers:
         #       1. For each step without scoring, reward = 0
@@ -92,23 +110,26 @@ class RoboPlayer(Node):
             rewards += 0.5
             self.last_ball_pos = self.ball_to_goal_dist()
 
-        elif self.ball_to_goal_dist() > self.last_ball_dist:
+        if self.ball_to_goal_dist() > self.last_ball_dist:
             rewards -= 1.0
             self.last_ball_pos = self.ball_to_goal_dist()
             
-        elif self.is_dead_ball():
+        if self.is_dead_ball():
             rewards -= 5
             done = True
             
-        elif self.is_scored():
+        if self.is_scored():
             rewards += 10
             done = True
         
-        self.step_info.states = self.state
+        self.step_info.states = [self.robot_pos.x, self.robot_pos.y]
         self.step_info.rewards = rewards
         self.step_info.done = done
         
-        self.step_update_pub.publish(self.info)
+        self.step_update_pub.publish(self.step_info)
+        if done:
+            self.reset()
+            self.get_logger().info("RESET!")
 
     def render(self):
         pass
@@ -116,12 +137,12 @@ class RoboPlayer(Node):
     def reset(self):
         self.reset_signal()
         
-        # wait until position is reset
-        current_robo_pos = self.robot_pos
-        while current_robo_pos.x >= 1e-3 and current_robo_pos.y >= 1e-3:
-            pass
+        # # wait until position is reset
+        # current_robo_pos = self.robot_pos
+        # while current_robo_pos.x >= 1e-3 and current_robo_pos.y >= 1e-3:
+        #     pass
         
-        self.step_info.states = [current_robo_pos.x, current_robo_pos.y]
+        # self.step_info.states = [current_robo_pos.x, current_robo_pos.y]
     
     def is_scored(self):
         """
@@ -137,10 +158,10 @@ class RoboPlayer(Node):
         Check whether the ball is out of range.
         """
         
-        return (self.ball_pos.x <= self.arena_size_x-0.1 or
-                self.ball_pos.x >= -self.arena_size_x+0.1 or
-                self.ball_pos.y <= self.arena_size_y-0.1 or
-                self.ball_pos.y >= -self.arena_size_y+0.1)
+        return (self.ball_pos.x <= -self.arena_size_x-0.1 or
+                self.ball_pos.x >= self.arena_size_x+0.1 or
+                self.ball_pos.y <= -self.arena_size_y-0.1 or
+                self.ball_pos.y >= self.arena_size_y+0.1)
         
     def reset_signal(self):
         """

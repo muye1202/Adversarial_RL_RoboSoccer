@@ -42,6 +42,12 @@ class field(Node):
         # see if reset flag has been sent
         self.reset_sub = self.create_subscription(Empty_msg, "robo_player/reset_flag", self.reset_pos_callback, 10)
         
+        # see if rs_env should be notified
+        self.state_sub = self.create_subscription(Empty_msg, "~/update", self.state_sub_callback, 10)
+        
+        # publish notification to rs_env
+        self.notify_env = self.create_publisher(Empty_msg, "robo_player/update", 10)
+        
         self.timer_period = 0.01
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
         
@@ -55,7 +61,7 @@ class field(Node):
         ## as time progresses and then stops
         self.kick_power = 40.
         self.kick_dir = 0.
-        self.ball_startx = 0.1
+        self.ball_startx = 0.2
         self.ball_starty = 0.
         self.ball_posx = 0.1
         self.ball_posy = 0.
@@ -85,8 +91,11 @@ class field(Node):
         self.player_state = State.STOPPED
         self.ball_state = State.STOPPED
         self.refresh_time = py_time.time()
+        
+        # state param
+        self.update_step = False
     
-    def reset_pos_callback(self):
+    def reset_pos_callback(self, _):
         """
         Reset robot position and ball position upon receiving
         the reset signal.
@@ -96,6 +105,10 @@ class field(Node):
         self.posy = self.starty
         self.ball_posx = self.ball_startx
         self.ball_posy = self.ball_starty
+    
+    def state_sub_callback(self, _):
+        
+        self.update_step = True
     
     def reset_callback(self, _, resp):
         """Reset robot and ball positions"""
@@ -293,29 +306,36 @@ class field(Node):
         self.ball.pose.position.y = self.ball_posy
     
     def timer_callback(self):
+        # publish arena marker
+        self.pub_marker.publish(self.marker_arr)
+        
         # calculate time elapsed from last receiving dash cmd
         curr_time = py_time.time()
         robot_travel_time = curr_time - self.refresh_time
-        # publish arena marker
-        self.pub_marker.publish(self.marker_arr)
 
-        # calculate current robot position
-        self.posx += robot_travel_time * self.velx
-        self.posy += robot_travel_time * self.vely
-
-        # update ball position at each cycle
-        # get kick pow and dir from subsriber
-        self.calc_ball_pos(self.last_vel)
-
-        # if the player does not kick, the ball
-        # should move with the player
         ball_to_robo = self.player_to_ball_dist()
-        if (self.player_state == State.DASHING and 
-           not self.ball_state == State.KICKING and
-           ball_to_robo <= 0.1):
-            # set ball position
-            self.ball_posx = self.posx + ball_to_robo*math.cos(self.ang)
-            self.ball_posy = self.posy + ball_to_robo*math.sin(self.ang)
+        if self.update_step:
+            # calculate current robot position
+            self.posx += robot_travel_time * self.velx
+            self.posy += robot_travel_time * self.vely
+
+            # update ball position at each cycle
+            # get kick pow and dir from subsriber
+            self.calc_ball_pos(self.last_vel)
+
+            # if the player does not kick, the ball
+            # should move with the player
+            if (self.player_state == State.DASHING and 
+            not self.ball_state == State.KICKING and
+            ball_to_robo <= 0.1):
+                # set ball position
+                self.ball_posx = self.posx + ball_to_robo*math.cos(self.ang)
+                self.ball_posy = self.posy + ball_to_robo*math.sin(self.ang)
+        
+        elif ball_to_robo > 0.1:
+            # calculate current robot position
+            self.posx += robot_travel_time * self.velx
+            self.posy += robot_travel_time * self.vely
 
         # publish the ball marker
         self.ball_marker()
@@ -349,6 +369,11 @@ class field(Node):
         
         self.player_state = State.STOPPED
         self.ball_state = State.STOPPED
+        self.refresh_time = py_time.time()
+        
+        if self.update_step:
+            self.notify_env.publish(Empty_msg())
+            self.update_step = False
 
 
 def main(args=None):

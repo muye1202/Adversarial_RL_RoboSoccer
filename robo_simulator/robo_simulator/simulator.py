@@ -62,15 +62,15 @@ class rs_simulator(Node):
         # send robot velocity cmd
         self.vel_pub = self.create_publisher(Pose2D, "field/player_vel", 10)
         
-        # publish reset command to the simulator
-        self.reset_pub = self.create_publisher(Empty, "~/reset_flag", 10)
+        # tell the rs_env step function should be called
+        self.state_pub = self.create_publisher(Empty, "field/update", 10)
         
         # receive ball and robot position
         self.ball_sub = self.create_subscription(Point, "field/ball_pos", self.ball_callback, 10)
         self.robot_sub = self.create_subscription(Pose2D, "field/robot_pos", self.robot_callback, 10)
         
         # receive rewards, states, done variables
-        self.rewards_sub = self.create_subscription(Info, "~/step_info", self.step_callback, 10)
+        self.rewards_sub = self.create_subscription(Info, "~/step_info", self.step_callback, 1)
         
         # field params
         self.ball_pos = Point()
@@ -79,12 +79,12 @@ class rs_simulator(Node):
         
         # info returned by step function
         self.step_info = Info()
-        
-        self.recv_update = False
+        self.recv_update = False   # tell rs_env if data should be analyzed
         self.ep = 0.
         self.done_episode = False
         self.prev_state = np.array([0., 0.])
         self.episodic_reward = 0
+        self.start_train = True
     
     def step_callback(self, step_info: Info):
 
@@ -127,7 +127,7 @@ class rs_simulator(Node):
     def follow_ball(self, ball_pos: Point):
         # dash towards the ball
         dash_dir = self.turning_angle(ball_pos, self.robot_pos)
-        dash_pow = 70
+        dash_pow = 50.
         
         #self.get_logger().info("dash direction: " + str(dash_dir))
         self.dash(dash_pow, dash_dir)
@@ -152,10 +152,11 @@ class rs_simulator(Node):
         
         # self.follow_ball(self.ball_pos)
 
-        if not self.done_episode:
+        if not self.done_episode: #and (self.start_train or self.recv_update):
+            self.start_train = False
+
             tf_prev_state = tf.expand_dims(tf.convert_to_tensor(self.prev_state), 0)
             action = policy(tf_prev_state, ou_noise)
-            self.get_logger().info("kick pow: " + str(action[0]))
 
             ###### SENDING THE COMMANDS ######  
             if self.player_to_ball_dist() <= 0.1:
@@ -166,12 +167,17 @@ class rs_simulator(Node):
                 kick_pow = action[0]
                 self.kick(kick_pow, kick_dir)
                 self.robo_state = State.IDLE
+                
+                # notify field and step function
+                # a new cmd has been sent
+                self.state_pub.publish(Empty())
             
             self.follow_ball(self.ball_pos)
 
+            ###### RECEIVE UPDATES #######
             if self.recv_update:
-                ###### RECEIVE UPDATES #######
-                state = np.array([self.step_info.states])
+                state_list = self.step_info.states
+                state = np.array([state_list[0], state_list[1]])
                 reward = self.step_info.rewards
                 done = self.step_info.done
 
@@ -191,7 +197,7 @@ class rs_simulator(Node):
 
             ep_reward_list.append(self.episodic_reward)
         
-        else:
+        elif self.done_episode:
             self.ep += 1
             self.prev_state = np.array([0., 0.])
             self.episodic_reward = 0

@@ -146,7 +146,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 192; 191; 188
-    Fixed Frame: purple/base_link
+    Fixed Frame: purple/base_footprint
     Frame Rate: 30
   Name: root
   Tools:
