@@ -1,5 +1,7 @@
 """
 The environment for training 1 vs 1 robot soccer RL network.
+
+FOR THE SOCCER SERVER SIMULATOR
 """
 from infrastructure.agent import Agent
 from infrastructure.world_model import WorldModel
@@ -76,7 +78,6 @@ class RoboPlayer(Env):
         self.reset_flag, rewards, done = self.agent.think(action=action, done=done, rewards=rewards, role="agent")
         self.opponent.think(action=action, done=done, rewards=rewards, role="trainer")
         self.helper.think(action=action, done=done, rewards=rewards, role="helper")
-        # self.opponent.follow_the_ball()
         
         info = {}
         return self.state, rewards, done, info
@@ -87,7 +88,6 @@ class RoboPlayer(Env):
     def reset(self):
         # reset the player to initial position
         # ONLY WHEN KICKING OFF THE MATCH
-        # print("reset agent: " + str(self.reset_flag))
         if self.agent.kick_off:
             self.agent.connect(host=self.host, port=self.port,\
                             teamname=self.teamname, unnum=self.unnum, side=WorldModel.SIDE_L)
@@ -97,10 +97,6 @@ class RoboPlayer(Env):
                                 teamname='enemy', unnum=self.unnum,\
                                 side=WorldModel.SIDE_R, goalie=True)
             self.opponent.play()
-            self.helper.connect(host=self.host, port=self.port,\
-                                teamname='enemy', unnum=2,\
-                                side=WorldModel.SIDE_R, goalie=False)
-            self.helper.play()
             
         elif not self.agent.kick_off:
             self.opponent.reset_flag = self.reset_flag

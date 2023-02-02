@@ -37,44 +37,24 @@ learning only from recent experience, we learn from sampling all of our experien
 accumulated so far.
 Now, let's see how is it implemented.
 """
-import sys
-import os
-sys.path.insert(0, '/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent')
-from infrastructure import agent
-from robo_env import RoboPlayer
 import tensorflow as tf
 from keras import layers
 import numpy as np
 import matplotlib.pyplot as plt
 
-
 """
 We use [OpenAIGym](http://gym.openai.com/docs) to create the environment.
 We will use the `upper_bound` parameter to scale our actions later.
 """
-
-teamname = "my_team"
-player = agent.Agent()
-enemy = agent.Agent()
-helper = agent.Agent()
-# see training progress in tensorboard
-logdir = 'logs_training'
-
-if not os.path.exists(logdir):
-    os.makedirs(logdir)
-
-env = RoboPlayer(role='attacker', agent=player, opponent=enemy, helper=helper,
-                 host="localhost", port=6000, teamname=teamname)
-
-num_states = env.observation_space.shape[0]
+num_states = 2
 print("Size of State Space ->  {}".format(num_states))
-num_actions = env.action_space.shape[0]
+num_actions = 2
 print("Size of Action Space ->  {}".format(num_actions))
 
-kickpow_upper_bound = env.action_space.high[2]
-kickpow_lower_bound = env.action_space.low[2]
-kickdir_low = env.action_space.low[3]
-kickdir_high = env.action_space.high[3]
+kickpow_upper_bound = 70.
+kickpow_lower_bound = 30.
+kickdir_low = -90.
+kickdir_high = 90.
 
 """
 To implement better exploration by the Actor network, we use noisy perturbations,
@@ -280,7 +260,7 @@ exploration.
 def policy(state, noise_object = None):
     sampled_actions = tf.squeeze(actor_model(state))
     # reshape the sampled actions
-    sampled_actions = tf.reshape(sampled_actions, [1,4])
+    sampled_actions = tf.reshape(sampled_actions, [1,2])
     
     if noise_object is not None:
         noise = noise_object()
@@ -291,8 +271,8 @@ def policy(state, noise_object = None):
 
     # We make sure action is within bounds
     outputs = sampled_actions[0]
-    outputs[2] = np.clip((outputs[2]+1.0)*kickpow_upper_bound, kickpow_lower_bound, kickpow_upper_bound)   # kick power
-    outputs[3] = np.clip((outputs[3])*kickdir_high, kickdir_low, kickdir_high) # kick direction
+    outputs[0] = np.clip((outputs[0])*kickpow_upper_bound, kickpow_lower_bound, kickpow_upper_bound)   # kick power
+    outputs[1] = np.clip((outputs[1])*kickdir_high, kickdir_low, kickdir_high) # kick direction
 
     return np.squeeze(outputs)
 
@@ -329,70 +309,70 @@ tau = 0.005
 
 buffer = Buffer(50000, 64)
 
-"""
-Now we implement our main training loop, and iterate over episodes.
-We sample actions using `policy()` and train with `learn()` at each time step,
-along with updating the Target networks at a rate `tau`.
-"""
+# """
+# Now we implement our main training loop, and iterate over episodes.
+# We sample actions using `policy()` and train with `learn()` at each time step,
+# along with updating the Target networks at a rate `tau`.
+# """
 
-# To store reward history of each episode
-ep_reward_list = []
-# To store average reward history of last few episodes
-avg_reward_list = []
+# # To store reward history of each episode
+# ep_reward_list = []
+# # To store average reward history of last few episodes
+# avg_reward_list = []
 
-# Takes about 4 min to train
-for ep in range(total_episodes):
+# # Takes about 4 min to train
+# for ep in range(total_episodes):
 
-    prev_state = env.reset()
-    episodic_reward = 0
+#     prev_state = env.reset()
+#     episodic_reward = 0
 
-    while True:
-        tf_prev_state = tf.expand_dims(tf.convert_to_tensor(prev_state), 0)
+#     while True:
+#         tf_prev_state = tf.expand_dims(tf.convert_to_tensor(prev_state), 0)
 
-        action = policy(tf_prev_state, ou_noise)
-        # Recieve state and reward from environment.
-        state, reward, done, info = env.step(action)
+#         action = policy(tf_prev_state, ou_noise)
+#         # Recieve state and reward from environment.
+#         state, reward, done, info = env.step(action)
 
-        buffer.record((prev_state, action, reward, state))
-        episodic_reward += reward
+#         buffer.record((prev_state, action, reward, state))
+#         episodic_reward += reward
 
-        buffer.learn()
-        update_target(target_actor.variables, actor_model.variables, tau)
-        update_target(target_critic.variables, critic_model.variables, tau)
+#         buffer.learn()
+#         update_target(target_actor.variables, actor_model.variables, tau)
+#         update_target(target_critic.variables, critic_model.variables, tau)
 
-        # End this episode when `done` is True
-        if done:
-            break
+#         # End this episode when `done` is True
+#         if done:
+#             break
 
-        prev_state = state
+#         prev_state = state
 
-    ep_reward_list.append(episodic_reward)
+#     ep_reward_list.append(episodic_reward)
 
-    # Mean of last 40 episodes
-    avg_reward = np.mean(ep_reward_list[-40:])
-    print("Episode * {} * Avg Reward is ==> {}".format(ep, avg_reward))
-    avg_reward_list.append(avg_reward)
+#     # Mean of last 40 episodes
+#     avg_reward = np.mean(ep_reward_list[-40:])
+#     print("Episode * {} * Avg Reward is ==> {}".format(ep, avg_reward))
+#     avg_reward_list.append(avg_reward)
 
-# Plotting graph
-# Episodes versus Avg. Rewards
-plt.plot(avg_reward_list)
-plt.xlabel("Episode")
-plt.ylabel("Avg. Epsiodic Reward")
-plt.show()
+# # Plotting graph
+# # Episodes versus Avg. Rewards
+# plt.plot(avg_reward_list)
+# plt.xlabel("Episode")
+# plt.ylabel("Avg. Epsiodic Reward")
+# plt.show()
 
-"""
-If training proceeds correctly, the average episodic reward will increase with time.
-Feel free to try different learning rates, `tau` values, and architectures for the
-Actor and Critic networks.
-The Inverted Pendulum problem has low complexity, but DDPG work great on many other
-problems.
-Another great environment to try this on is `LunarLandingContinuous-v2`, but it will take
-more episodes to obtain good results.
-"""
+# """
+# If training proceeds correctly, the average episodic reward will increase with time.
+# Feel free to try different learning rates, `tau` values, and architectures for the
+# Actor and Critic networks.
+# The Inverted Pendulum problem has low complexity, but DDPG work great on many other
+# problems.
+# Another great environment to try this on is `LunarLandingContinuous-v2`, but it will take
+# more episodes to obtain good results.
+# """
 
-# Save the weights
-actor_model.save_weights("pendulum_actor.h5")
-critic_model.save_weights("pendulum_critic.h5")
+# # Save the weights
+# actor_model.save_weights("pendulum_actor.h5")
+# critic_model.save_weights("pendulum_critic.h5")
 
-target_actor.save_weights("pendulum_target_actor.h5")
-target_critic.save_weights("pendulum_target_critic.h5")
+# target_actor.save_weights("pendulum_target_actor.h5")
+# target_critic.save_weights("pendulum_target_critic.h5")

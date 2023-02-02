@@ -21,7 +21,8 @@ setup(
     entry_points={
         'console_scripts': [
             'robo_sim = robo_simulator.simulator:main',
-            'soccer_field = robo_simulator.field:main'
+            'soccer_field = robo_simulator.field:main',
+            'rs_env = robo_simulator.rs_env:main'
         ],
     },
 )

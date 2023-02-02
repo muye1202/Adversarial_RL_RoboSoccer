@@ -11,8 +11,6 @@ def generate_launch_description():
     urdf_path = FindPackageShare('nuturtle_description')
     default_model_path = PathJoinSubstitution([urdf_path, 'urdf/turtlebot3_burger.urdf.xacro'])
 
-    custom_path = FindPackageShare('nusim')
-
     return LaunchDescription([
         DeclareLaunchArgument(name='use_jsp', default_value='true',
                               choices=['true', 'false'],
@@ -46,10 +44,6 @@ def generate_launch_description():
 
         SetLaunchConfiguration(name='rvizconfig', value=[urdf_path,
                                                          TextSubstitution(text='/rviz/robot_player.rviz')]),
-
-        SetLaunchConfiguration(name='custom_rviz', value=[custom_path,
-                                                          TextSubstitution(text='/config\
-                                                                           /nusim.rviz')]),
 
         Node(
             package='robot_state_publisher',

@@ -6,6 +6,7 @@ from visualization_msgs.msg import MarkerArray, Marker
 from tf_transformations import quaternion_from_euler
 from geometry_msgs.msg import Point, Pose2D, Quaternion, TransformStamped
 from std_srvs.srv import Empty
+from std_msgs.msg import Empty as Empty_msg
 from tf2_ros import TransformBroadcaster
 from enum import Enum, auto
 
@@ -37,6 +38,9 @@ class field(Node):
         
         # reset robot and ball position
         self.reset_srv = self.create_service(Empty, '~/reset', self.reset_callback)
+        
+        # see if reset flag has been sent
+        self.reset_sub = self.create_subscription(Empty_msg, "robo_player/reset_flag", self.reset_pos_callback, 10)
         
         self.timer_period = 0.01
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
@@ -81,6 +85,17 @@ class field(Node):
         self.player_state = State.STOPPED
         self.ball_state = State.STOPPED
         self.refresh_time = py_time.time()
+    
+    def reset_pos_callback(self):
+        """
+        Reset robot position and ball position upon receiving
+        the reset signal.
+        """
+        
+        self.posx = self.startx
+        self.posy = self.starty
+        self.ball_posx = self.ball_startx
+        self.ball_posy = self.ball_starty
     
     def reset_callback(self, _, resp):
         """Reset robot and ball positions"""
