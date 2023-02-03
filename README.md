@@ -10,7 +10,7 @@ Author: Muye Jia
 4. The following shows the rewards plot after 500 episodes.
 ![](images/one_attacker_500.png)
 
-Note: The rewards are set as follows:
+* Note: The rewards are set as follows:
     - If scored, rewards += 20.0
     - If dead ball, rewards -= 0.1
     - If dribble towards the goal, rewards += 0.5
