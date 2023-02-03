@@ -40,7 +40,7 @@ class field(Node):
         self.reset_srv = self.create_service(Empty, '~/reset', self.reset_callback)
         
         # see if reset flag has been sent
-        self.reset_sub = self.create_subscription(Empty_msg, "robo_player/reset_flag", self.reset_pos_callback, 10)
+        self.reset_sub = self.create_subscription(Empty_msg, "~/reset_flag", self.reset_pos_callback, 10)
         
         # see if rs_env should be notified
         self.state_sub = self.create_subscription(Empty_msg, "~/update", self.state_sub_callback, 10)
@@ -56,25 +56,6 @@ class field(Node):
         self.marker_generate()
         self.broadcaster = TransformBroadcaster(self)
         
-        # publish marker for ball
-        ## the ball will move shorter distances 
-        ## as time progresses and then stops
-        self.kick_power = 40.
-        self.kick_dir = 0.
-        self.ball_startx = 0.2
-        self.ball_starty = 0.
-        self.ball_posx = 0.1
-        self.ball_posy = 0.
-        self.last_vel = 0.
-        
-        self.MAX_KICK_VEL = 30
-        self.MAX_STRENGTH = 100
-        self.BALL_DECAY = 0.4
-
-        # marker for soccer ball
-        self.ball = Marker()
-        self.ball_marker()
-        
         # robo action param
         self.startx = 0.
         self.starty = 0.
@@ -88,12 +69,35 @@ class field(Node):
         self.PLAYER_MAX_SPEED = 1
         self.quaternion = Quaternion()
         
+        # publish marker for ball
+        ## the ball will move shorter distances 
+        ## as time progresses and then stops
+        self.kick_power = 40.
+        self.kick_dir = 0.
+        self.ball_startx = self.posx + 0.2
+        self.ball_starty = 0.
+        self.ball_posx = self.posx + 0.1
+        self.ball_posy = 0.
+        self.last_vel = 0.
+        
+        self.MAX_KICK_VEL = 30
+        self.MAX_STRENGTH = 100
+        self.BALL_DECAY = 0.4
+        self.SCALING = 0.01/self.timer_period
+
+        # marker for soccer ball
+        self.ball = Marker()
+        self.ball_marker()
+        
         self.player_state = State.STOPPED
         self.ball_state = State.STOPPED
         self.refresh_time = py_time.time()
         
         # state param
         self.update_step = False
+        
+        ###### SET TO TRUE WHEN EVALUATING MODEL ######
+        self.evaluate = True
     
     def reset_pos_callback(self, _):
         """
@@ -177,7 +181,7 @@ class field(Node):
     def marker_generate(self):
         """Create markers array for arena."""
         # 1st long side of the arena
-        arena_size = 5.5
+        arena_size = 3.5
         z_pos = 0.
 
         marker_shape = Marker()
@@ -256,12 +260,12 @@ class field(Node):
         marker_shape.color.b = 1.
         marker_shape.color.a = 1.0
         marker_shape.scale.x = 0.2
-        marker_shape.scale.y = 0.4*arena_size
+        marker_shape.scale.y = 0.2*arena_size
         marker_shape.scale.z = 0.5
         marker_shape.frame_locked = False
 
         marker_shape.pose.position.x = arena_size
-        marker_shape.pose.position.y = 0.3*arena_size
+        marker_shape.pose.position.y = 0.4*arena_size
         marker_shape.pose.position.z = z_pos
 
         self.marker_arr.markers.append(marker_shape)
@@ -278,12 +282,12 @@ class field(Node):
         marker_shape.color.b = 1.
         marker_shape.color.a = 1.0
         marker_shape.scale.x = 0.2
-        marker_shape.scale.y = 0.4*arena_size
+        marker_shape.scale.y = 0.2*arena_size
         marker_shape.scale.z = 0.5
         marker_shape.frame_locked = False
 
         marker_shape.pose.position.x = arena_size
-        marker_shape.pose.position.y = -0.3*arena_size
+        marker_shape.pose.position.y = -0.4*arena_size
         marker_shape.pose.position.z = z_pos
 
         self.marker_arr.markers.append(marker_shape)
@@ -314,10 +318,10 @@ class field(Node):
         robot_travel_time = curr_time - self.refresh_time
 
         ball_to_robo = self.player_to_ball_dist()
-        if self.update_step:
+        if self.update_step or self.evaluate:
             # calculate current robot position
-            self.posx += robot_travel_time * self.velx
-            self.posy += robot_travel_time * self.vely
+            self.posx += robot_travel_time * self.SCALING * self.velx
+            self.posy += robot_travel_time * self.SCALING * self.vely
 
             # update ball position at each cycle
             # get kick pow and dir from subsriber
@@ -334,8 +338,8 @@ class field(Node):
         
         elif ball_to_robo > 0.1:
             # calculate current robot position
-            self.posx += robot_travel_time * self.velx
-            self.posy += robot_travel_time * self.vely
+            self.posx += robot_travel_time * self.SCALING * self.velx
+            self.posy += robot_travel_time * self.SCALING * self.vely
 
         # publish the ball marker
         self.ball_marker()

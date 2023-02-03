@@ -131,7 +131,7 @@ class Buffer:
         # Set index to zero if buffer_capacity is exceeded,
         # replacing old records
         index = self.buffer_counter % self.buffer_capacity
-
+        
         self.state_buffer[index] = obs_tuple[0]
         self.action_buffer[index] = obs_tuple[1]
         self.reward_buffer[index] = obs_tuple[2]
@@ -217,13 +217,13 @@ def get_actor():
     last_init = tf.random_uniform_initializer(minval=-0.003, maxval=0.003)
 
     inputs = layers.Input(shape=(num_states))
-    out = layers.Dense(256, activation="relu")(inputs)
-    out = layers.Dense(256, activation="relu")(out)
-    outputs = layers.Dense(num_actions, activation="tanh", kernel_initializer=last_init)(out)
+    out = layers.Dense(256, activation="relu", use_bias=True)(inputs)
+    out = layers.Dense(256, activation="relu", use_bias=True)(out)
+    outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=last_init)(out)
 
     # Upper bound of the action space
     ## needs to bound kick pow and dir
-    
+    outputs = outputs * kickdir_high
     model = tf.keras.Model(inputs, outputs)
     return model
 
@@ -231,18 +231,18 @@ def get_actor():
 def get_critic():
     # State as input
     state_input = layers.Input(shape=(num_states))
-    state_out = layers.Dense(16, activation="relu")(state_input)
-    state_out = layers.Dense(32, activation="relu")(state_out)
+    state_out = layers.Dense(16, activation="relu", use_bias=True)(state_input)
+    state_out = layers.Dense(32, activation="relu", use_bias=True)(state_out)
 
     # Action as input
     action_input = layers.Input(shape=(num_actions))
-    action_out = layers.Dense(32, activation="relu")(action_input)
+    action_out = layers.Dense(32, activation="tanh", use_bias=True)(action_input)
 
     # Both are passed through seperate layer before concatenating
     concat = layers.Concatenate(axis=1)([state_out, action_out])
 
-    out = layers.Dense(256, activation="relu")(concat)
-    out = layers.Dense(256, activation="relu")(out)
+    out = layers.Dense(256, activation="relu", use_bias=True)(concat)
+    out = layers.Dense(256, activation="relu", use_bias=True)(out)
     outputs = layers.Dense(1)(out)
 
     # Outputs single value for give state-action
@@ -271,8 +271,10 @@ def policy(state, noise_object = None):
 
     # We make sure action is within bounds
     outputs = sampled_actions[0]
-    outputs[0] = np.clip((outputs[0])*kickpow_upper_bound, kickpow_lower_bound, kickpow_upper_bound)   # kick power
-    outputs[1] = np.clip((outputs[1])*kickdir_high, kickdir_low, kickdir_high) # kick direction
+    outputs[0] = tf.clip_by_value(outputs[0], kickpow_lower_bound, kickpow_upper_bound)   # kick power
+    outputs[1] = tf.clip_by_value(outputs[1], kickdir_low, kickdir_high) # kick direction
+    
+    #print("kick dir: " + str(outputs[1]))
 
     return np.squeeze(outputs)
 
@@ -295,11 +297,11 @@ target_actor.set_weights(actor_model.get_weights())
 target_critic.set_weights(critic_model.get_weights())
 
 # Learning rate for actor-critic models
-critic_lr = 0.002
-actor_lr = 0.001
+critic_lr = 0.005
+actor_lr = 0.005
 
-critic_optimizer = tf.keras.optimizers.Adam(critic_lr)
-actor_optimizer = tf.keras.optimizers.Adam(actor_lr)
+critic_optimizer = tf.keras.optimizers.Adam(critic_lr, clipnorm=1.0)
+actor_optimizer = tf.keras.optimizers.Adam(actor_lr, clipnorm=1.0)
 
 total_episodes = 10000
 # Discount factor for future rewards

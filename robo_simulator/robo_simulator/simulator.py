@@ -11,6 +11,7 @@ import tensorflow as tf
 from rl.ddpg_robo_soccer import OUActionNoise, Buffer, get_actor
 from rl.ddpg_robo_soccer import policy, get_critic, update_target
 from rl_interfaces.msg import Info
+import matplotlib.pyplot as plt
 
 """
 Training loop for the RL network.
@@ -24,11 +25,11 @@ critic_model = get_critic()
 target_actor = get_actor()
 target_critic = get_critic()
 
-# Making the weights equal initially
-target_actor.set_weights(actor_model.get_weights())
-target_critic.set_weights(critic_model.get_weights())
+# # Making the weights equal initially
+# target_actor.set_weights(actor_model.get_weights())
+# target_critic.set_weights(critic_model.get_weights())
 
-total_episodes = 10000
+total_episodes = 500
 # Used to update target networks
 tau = 0.005
 
@@ -52,7 +53,7 @@ class rs_simulator(Node):
     def __init__(self):
         super().__init__("rs_simulator")
         
-        timer_period = 0.01
+        timer_period = 0.001
         self.timer = self.create_timer(timer_period, self.timer_callback)
         self.start_training = True
         
@@ -72,6 +73,9 @@ class rs_simulator(Node):
         # receive rewards, states, done variables
         self.rewards_sub = self.create_subscription(Info, "~/step_info", self.step_callback, 1)
         
+        # publish reset command to the simulator
+        self.reset_pub = self.create_publisher(Empty, "field/reset_flag", 10)
+        
         # field params
         self.ball_pos = Point()
         self.robot_pos = Pose2D()
@@ -85,6 +89,8 @@ class rs_simulator(Node):
         self.prev_state = np.array([0., 0.])
         self.episodic_reward = 0
         self.start_train = True
+        self.action_list = []
+        # self.file = open("action_taken.txt", "w")
     
     def step_callback(self, step_info: Info):
 
@@ -127,86 +133,103 @@ class rs_simulator(Node):
     def follow_ball(self, ball_pos: Point):
         # dash towards the ball
         dash_dir = self.turning_angle(ball_pos, self.robot_pos)
-        dash_pow = 50.
+        dash_pow = 80.
         
         #self.get_logger().info("dash direction: " + str(dash_dir))
         self.dash(dash_pow, dash_dir)
+        
+    def reset_signal(self):
+        """
+        Send the reset signal to simulator to reset the position
+        of the robot and the ball.
+        """
+        
+        self.reset_pub.publish(Empty())
     
     def timer_callback(self):
-        # # TEST PASSED: robot dashing forward
-        # #       but not kicking the ball
-        # #       pose2D: [power, dir, 0.]
-        # dash_cmd = Pose2D()
-        # dash_cmd.x = 10.
-        # dash_cmd.y = 30.
-        # self.vel_pub.publish(dash_cmd)
-        
-        # # TEST PASSED: kick the ball and run to it
-        # if self.player_to_ball_dist() <= 0.1:
-        #     self.robo_state = State.BALL_KICKABLE
+        if self.ep <= total_episodes:
+            if not self.done_episode:
+                tf_prev_state = tf.expand_dims(tf.convert_to_tensor(self.prev_state), 0)
+                action = policy(tf_prev_state, ou_noise)
 
-        # if self.robo_state == State.BALL_KICKABLE:
-        #     kick_dir = np.random.uniform(low=-55, high=55)
-        #     self.kick(70., kick_dir)
-        #     self.robo_state = State.IDLE
-        
-        # self.follow_ball(self.ball_pos)
+                ###### SENDING THE COMMANDS ######  
+                if self.player_to_ball_dist() <= 0.1:
+                    self.robo_state = State.BALL_KICKABLE
 
-        if not self.done_episode: #and (self.start_train or self.recv_update):
-            self.start_train = False
+                if self.robo_state == State.BALL_KICKABLE:
+                    kick_dir = action[1]
+                    kick_pow = action[0]
+                    self.kick(kick_pow, kick_dir)
+                    
+                    self.robo_state = State.IDLE
 
-            tf_prev_state = tf.expand_dims(tf.convert_to_tensor(self.prev_state), 0)
-            action = policy(tf_prev_state, ou_noise)
-
-            ###### SENDING THE COMMANDS ######  
-            if self.player_to_ball_dist() <= 0.1:
-                self.robo_state = State.BALL_KICKABLE
-
-            if self.robo_state == State.BALL_KICKABLE:
-                kick_dir = action[1]
-                kick_pow = action[0]
-                self.kick(kick_pow, kick_dir)
-                self.robo_state = State.IDLE
+                    # notify field and step function
+                    # a new cmd has been sent
+                    self.state_pub.publish(Empty())
                 
-                # notify field and step function
-                # a new cmd has been sent
-                self.state_pub.publish(Empty())
+                self.follow_ball(self.ball_pos)
+
+                ###### RECEIVE UPDATES #######
+                if self.recv_update:
+                    state_list = self.step_info.states
+                    state = np.array([state_list[0], state_list[1]])
+                    reward = self.step_info.rewards
+                    done = self.step_info.done
+                    
+                    normal_state = state
+                    normal_pre_state = self.prev_state
+                    # normalize input
+                    if np.linalg.norm(state) > 0 and np.linalg.norm(self.prev_state) > 0:
+                        normal_state = state / np.linalg.norm(state)
+                        normal_pre_state = self.prev_state / np.linalg.norm(self.prev_state)
+
+                    buffer.record((normal_pre_state, action, reward, normal_state))
+                    # buffer.record((self.prev_state, action, reward, state))
+                    self.episodic_reward += reward
+
+                    buffer.learn()
+                    update_target(target_actor.variables, actor_model.variables, tau)
+                    update_target(target_critic.variables, critic_model.variables, tau)
+
+                    # End this episode when `done` is True
+                    if done:
+                        self.done_episode = True
+                        self.reset_signal()
+                    
+                    self.prev_state = normal_state
+                    self.recv_update = False
+
+                ep_reward_list.append(self.episodic_reward)
             
-            self.follow_ball(self.ball_pos)
-
-            ###### RECEIVE UPDATES #######
-            if self.recv_update:
-                state_list = self.step_info.states
-                state = np.array([state_list[0], state_list[1]])
-                reward = self.step_info.rewards
-                done = self.step_info.done
-
-                buffer.record((self.prev_state, action, reward, state))
-                self.episodic_reward += reward
-
-                buffer.learn()
-                update_target(target_actor.variables, actor_model.variables, tau)
-                update_target(target_critic.variables, critic_model.variables, tau)
-
-                # End this episode when `done` is True
-                if done:
-                    self.done_episode = True
+            elif self.done_episode:
+                # clear the action cache for every episode
+                # self.file.write(str(self.action_list))
+                # self.action_list = []
                 
-                self.prev_state = state
-                self.recv_update = False
-
-            ep_reward_list.append(self.episodic_reward)
-        
-        elif self.done_episode:
-            self.ep += 1
-            self.prev_state = np.array([0., 0.])
-            self.episodic_reward = 0
-            self.done_episode = False
+                self.ep += 1
+                self.prev_state = np.array([2., 0.])
+                self.episodic_reward = 0
+                self.done_episode = False
+                
+                # Mean of last 40 episodes
+                avg_reward = np.mean(ep_reward_list[-40:])
+                self.get_logger().info("Episode * {} * Avg Reward is ==> {}".format(self.ep, avg_reward))
+                avg_reward_list.append(avg_reward)
+                
+        else:
+            # Plotting graph
+            # Episodes versus Avg. Rewards
+            plt.plot(avg_reward_list)
+            plt.xlabel("Episode")
+            plt.ylabel("Avg. Epsiodic Reward")
+            plt.show()
             
-            # Mean of last 40 episodes
-            avg_reward = np.mean(ep_reward_list[-40:])
-            self.get_logger().info("Episode * {} * Avg Reward is ==> {}".format(self.ep, avg_reward))
-            avg_reward_list.append(avg_reward)
+            # Save the weights
+            actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/attacker_actor.h5")
+            critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/attacker_critic.h5")
+
+            target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/attacker_target_actor.h5")
+            target_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/attacker_target_critic.h5")
 
 
 def main(args=None):

@@ -10,8 +10,8 @@ from rl_interfaces.msg import Info
 
 class RoboPlayer(Node):
     
-    arena_size_x = 5.5
-    arena_size_y = 5.5/2
+    arena_range_x = 3.5
+    arena_range_y = arena_range_x/2
     robot_pos = Pose2D()
     ball_pos = Point()
 
@@ -44,18 +44,17 @@ class RoboPlayer(Node):
         self.state = np.array([0., 0.])
         
         # last ball position
-        self.last_ball_dist = self.arena_size_x
+        self.last_ball_dist = self.arena_range_x
+        self.last_ball_dist_y = 0.
         
         #######################################
-        timer_period = 0.01
+        timer_period = 0.001
         self.timer_ = self.create_timer(timer_period, self.timer_callback)
-        
-        # publish reset command to the simulator
-        self.reset_pub = self.create_publisher(Empty, "~/reset_flag", 10)
 
         # receive ball and robot position
         self.ball_sub = self.create_subscription(Point, "field/ball_pos", self.ball_callback, 10)
         self.robot_sub = self.create_subscription(Pose2D, "field/robot_pos", self.robot_callback, 10)
+        self.last_dir = 0.
         
         # publish step function update
         self.step_update_pub = self.create_publisher(Info, "rs_simulator/step_info", 1)
@@ -64,6 +63,9 @@ class RoboPlayer(Node):
         # see if new cmd has been sent
         self.state_sub = self.create_subscription(Empty, "~/update", self.update_callback, 10)
         self.step_state = False
+        
+        # count how many steps have been taken
+        self.count_steps = 0.
     
     def timer_callback(self):
         if self.step_state:
@@ -104,80 +106,92 @@ class RoboPlayer(Node):
         #       For each step without being scored, reward = +1
         #       Taking control over the ball, reward = +10
         #       Blocking shooting route, reward = +1
-
-        # check whether the robot is advancing to the goal
-        if self.ball_to_goal_dist() < self.last_ball_dist:
-            rewards += 0.5
-            self.last_ball_pos = self.ball_to_goal_dist()
-
-        if self.ball_to_goal_dist() > self.last_ball_dist:
-            rewards -= 1.0
-            self.last_ball_pos = self.ball_to_goal_dist()
-            
-        if self.is_dead_ball():
-            rewards -= 5
-            done = True
-            
-        if self.is_scored():
-            rewards += 10
-            done = True
         
-        self.step_info.states = [self.robot_pos.x, self.robot_pos.y]
+        # check whether the robot moves towards
+        # the goal in the past episode:
+        if self.last_ball_dist - self.ball_to_goal_dist() > 0.01:    
+            rewards += 1.0
+            
+            # self.get_logger().info("to goal dist decreased: " + str(self.ball_to_goal_dist()-self.last_ball_dist))
+            # self.last_ball_dist = self.ball_to_goal_dist()
+
+        elif self.last_ball_dist - self.ball_to_goal_dist() < 0.01:
+            rewards -= 1.0
+            
+            # self.get_logger().info("to goal dist increased: " + str(self.ball_to_goal_dist()-self.last_ball_dist))
+            # self.last_ball_dist = self.ball_to_goal_dist()
+            
+        #The robot should be rewarded if it faces the goal direction
+        if self.is_player_facing_goal():
+            rewards += 0.5
+            
+        # check whether the robot is advancing to the goal
+        if self.is_scored():
+            rewards = 20.
+            done = True
+            
+        if not self.is_scored() and self.is_dead_ball():
+            if rewards == 0.:
+                rewards = -2.0
+            else:
+                rewards -= 0.5
+            
+            done = True
+
+        self.step_info.states = [self.ball_pos.x, self.ball_pos.y]
         self.step_info.rewards = rewards
         self.step_info.done = done
         
         self.step_update_pub.publish(self.step_info)
-        if done:
-            self.reset()
-            self.get_logger().info("RESET!")
+        self.last_dir = self.robot_pos.theta
+        self.last_ball_dist = self.ball_to_goal_dist()
+            
 
     def render(self):
         pass
-
-    def reset(self):
-        self.reset_signal()
-        
-        # # wait until position is reset
-        # current_robo_pos = self.robot_pos
-        # while current_robo_pos.x >= 1e-3 and current_robo_pos.y >= 1e-3:
-        #     pass
-        
-        # self.step_info.states = [current_robo_pos.x, current_robo_pos.y]
     
     def is_scored(self):
         """
         Check whether the attacking side has scored.
         """
         
-        return (self.ball_pos.x >= 0.5*self.arena_size_x-0.12 and
-                self.ball_pos.y <= 0.1*self.arena_size_y-0.12 and
-                self.ball_pos.y >= 0.1*self.arena_size_y+0.12)
+        return (self.ball_pos.x >= 0.5*self.arena_range_x-0.2 and
+                self.ball_pos.y <= 0.1*self.arena_range_y-0.2 and
+                self.ball_pos.y >= 0.1*self.arena_range_y+0.2)
         
     def is_dead_ball(self):
         """
         Check whether the ball is out of range.
         """
         
-        return (self.ball_pos.x <= -self.arena_size_x-0.1 or
-                self.ball_pos.x >= self.arena_size_x+0.1 or
-                self.ball_pos.y <= -self.arena_size_y-0.1 or
-                self.ball_pos.y >= self.arena_size_y+0.1)
-        
-    def reset_signal(self):
-        """
-        Send the reset signal to simulator to reset the position
-        of the robot and the ball.
-        """
-        
-        self.reset_pub.publish(Empty())
+        return (self.ball_pos.x <= -self.arena_range_x-0.2 or
+                self.ball_pos.x >= self.arena_range_x+0.2 or
+                self.ball_pos.y <= -self.arena_range_y-0.2 or
+                self.ball_pos.y >= self.arena_range_y+0.2)
     
     def ball_to_goal_dist(self):
         """
         Calculate the distance between the ball and the goal
         """
         
-        return math.sqrt((self.ball_pos.x - self.arena_size_x)**2 + 
-                         (self.ball_pos.y - self.arena_size_y)**2)
+        return (self.arena_range_x - self.ball_pos.x)**2 + (self.ball_pos.y)**2
+    
+    def is_player_facing_goal(self):
+        """
+        Determine if the robot is facing the goal
+        """
+        
+        # calculate the angle between goal's left post
+        # and the robot
+        left_post_angle = math.degrees(math.atan2(0.4*2*self.arena_range_y-self.robot_pos.y, 
+                                                  self.arena_range_x-self.robot_pos.x))
+        
+        right_post_angle = math.degrees(math.atan2(self.robot_pos.y+0.4*2*self.arena_range_y, 
+                                                  self.arena_range_x-self.robot_pos.x))
+        robot_facing = math.degrees(self.robot_pos.theta)
+        
+        return (robot_facing <= left_post_angle and
+                robot_facing >= right_post_angle)
 
 def main(args=None):
     rclpy.init(args=args)
