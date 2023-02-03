@@ -1,5 +1,6 @@
 import math
 import rclpy
+import numpy as np
 import time as py_time
 from rclpy.node import Node
 from visualization_msgs.msg import MarkerArray, Marker
@@ -105,10 +106,10 @@ class field(Node):
         the reset signal.
         """
         
-        self.posx = self.startx
-        self.posy = self.starty
-        self.ball_posx = self.ball_startx
-        self.ball_posy = self.ball_starty
+        self.posx = np.random.uniform(low=-2.0, high=1.0)
+        self.posy = np.random.uniform(low=-1, high=1.0)
+        self.ball_posx = self.posx + 0.2
+        self.ball_posy = self.posy
     
     def state_sub_callback(self, _):
         

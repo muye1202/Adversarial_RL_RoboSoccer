@@ -29,7 +29,7 @@ target_critic = get_critic()
 # target_actor.set_weights(actor_model.get_weights())
 # target_critic.set_weights(critic_model.get_weights())
 
-total_episodes = 500
+total_episodes = 2000
 # Used to update target networks
 tau = 0.005
 
@@ -202,10 +202,6 @@ class rs_simulator(Node):
                 ep_reward_list.append(self.episodic_reward)
             
             elif self.done_episode:
-                # clear the action cache for every episode
-                # self.file.write(str(self.action_list))
-                # self.action_list = []
-                
                 self.ep += 1
                 self.prev_state = np.array([2., 0.])
                 self.episodic_reward = 0
@@ -215,6 +211,14 @@ class rs_simulator(Node):
                 avg_reward = np.mean(ep_reward_list[-40:])
                 self.get_logger().info("Episode * {} * Avg Reward is ==> {}".format(self.ep, avg_reward))
                 avg_reward_list.append(avg_reward)
+                
+                # save the weights every 1000 episodes:
+                if self.ep % 1000 == 0:
+                    actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/attacker_actor.h5")
+                    critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/attacker_critic.h5")
+
+                    target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/attacker_target_actor.h5")
+                    target_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/attacker_target_critic.h5")
                 
         else:
             # Plotting graph

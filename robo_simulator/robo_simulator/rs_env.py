@@ -116,26 +116,26 @@ class RoboPlayer(Node):
             # self.last_ball_dist = self.ball_to_goal_dist()
 
         elif self.last_ball_dist - self.ball_to_goal_dist() < 0.01:
-            rewards -= 0.1
+            rewards -= 0.05
             
             # self.get_logger().info("to goal dist increased: " + str(self.ball_to_goal_dist()-self.last_ball_dist))
             # self.last_ball_dist = self.ball_to_goal_dist()
             
         #The robot should be rewarded if it faces the goal direction
         if self.is_player_facing_goal():
-            rewards += 0.5
+            rewards += 0.1
             
         # check whether the robot is advancing to the goal
         if self.is_scored():
-            rewards += 20.
+            rewards += 10.
             done = True
             
         if not self.is_scored() and self.is_dead_ball():
             if rewards == 0.:
-                rewards = -2.0
+                rewards = -0.01
             else:
-                rewards -= 0.1
-            
+                rewards -= 0.01
+
             done = True
 
         self.step_info.states = [self.ball_pos.x, self.ball_pos.y]

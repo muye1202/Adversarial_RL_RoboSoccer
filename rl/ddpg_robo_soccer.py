@@ -283,7 +283,7 @@ def policy(state, noise_object = None):
 ## Training hyperparameters
 """
 
-std_dev = 0.2
+std_dev = 0.1
 ou_noise = OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev) * np.ones(1))
 
 actor_model = get_actor()
@@ -297,11 +297,11 @@ target_actor.set_weights(actor_model.get_weights())
 target_critic.set_weights(critic_model.get_weights())
 
 # Learning rate for actor-critic models
-critic_lr = 0.005
-actor_lr = 0.005
+critic_lr = 0.001
+actor_lr = 0.001
 
-critic_optimizer = tf.keras.optimizers.Adam(critic_lr, clipnorm=1.0)
-actor_optimizer = tf.keras.optimizers.Adam(actor_lr, clipnorm=1.0)
+critic_optimizer = tf.keras.optimizers.Adam(critic_lr, clipnorm=0.6)
+actor_optimizer = tf.keras.optimizers.Adam(actor_lr, clipnorm=0.6)
 
 total_episodes = 10000
 # Discount factor for future rewards
