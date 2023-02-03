@@ -110,13 +110,13 @@ class RoboPlayer(Node):
         # check whether the robot moves towards
         # the goal in the past episode:
         if self.last_ball_dist - self.ball_to_goal_dist() > 0.01:    
-            rewards += 1.0
+            rewards += 0.5
             
             # self.get_logger().info("to goal dist decreased: " + str(self.ball_to_goal_dist()-self.last_ball_dist))
             # self.last_ball_dist = self.ball_to_goal_dist()
 
         elif self.last_ball_dist - self.ball_to_goal_dist() < 0.01:
-            rewards -= 1.0
+            rewards -= 0.1
             
             # self.get_logger().info("to goal dist increased: " + str(self.ball_to_goal_dist()-self.last_ball_dist))
             # self.last_ball_dist = self.ball_to_goal_dist()
@@ -127,14 +127,14 @@ class RoboPlayer(Node):
             
         # check whether the robot is advancing to the goal
         if self.is_scored():
-            rewards = 20.
+            rewards += 20.
             done = True
             
         if not self.is_scored() and self.is_dead_ball():
             if rewards == 0.:
                 rewards = -2.0
             else:
-                rewards -= 0.5
+                rewards -= 0.1
             
             done = True
 

@@ -130,7 +130,6 @@ class Evaluate(Node):
                 self.ball_pos.y >= self.arena_range_y+0.2)
         
     def timer_callback(self):
-        # self.get_logger().info(str(self.ball_pos.x) + " " + str(self.ball_pos.y))
         ###### SENDING THE COMMANDS ######
         if self.is_dead_ball() or self.is_scored():
             self.reset_signal()

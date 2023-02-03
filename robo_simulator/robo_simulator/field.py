@@ -48,7 +48,7 @@ class field(Node):
         # publish notification to rs_env
         self.notify_env = self.create_publisher(Empty_msg, "robo_player/update", 10)
         
-        self.timer_period = 0.01
+        self.timer_period = 0.001
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
         
         # generate marker for arena
@@ -97,7 +97,7 @@ class field(Node):
         self.update_step = False
         
         ###### SET TO TRUE WHEN EVALUATING MODEL ######
-        self.evaluate = True
+        self.evaluate = False
     
     def reset_pos_callback(self, _):
         """
