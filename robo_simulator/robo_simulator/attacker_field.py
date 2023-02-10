@@ -21,10 +21,10 @@ class State(Enum):
     STOPPED = auto()
 
 
-class one_one_field(Node):
+class field(Node):
     """Publishing markers representing the field"""
     def __init__(self):
-        super().__init__("one_one")
+        super().__init__("field")
         
         self.pub_marker = self.create_publisher(MarkerArray, "~/visualization_marker_array", 1)
         self.kick_sub = self.create_subscription(Point, "~/kick", self.kick_update, 10)
@@ -32,13 +32,10 @@ class one_one_field(Node):
         
         # receive the velocity for the robot
         self.vel_sub = self.create_subscription(Pose2D, '~/player_vel', self.vel_callback, 10)
-        # receive velocity for defender
-        self.defender_vel_sub = self.create_subscription(Pose2D, '~/defender_vel', self.defender_vel_callback, 10)
         
         # send the position of the robot and ball
         self.ball_pos_pub = self.create_publisher(Point, "~/ball_pos", 10)
         self.robot_pos_pub = self.create_publisher(Pose2D, "~/robot_pos", 10)
-        self.defender_pub = self.create_publisher(Pose2D, "~/defender_pos", 10)
         
         # reset robot and ball position
         self.reset_srv = self.create_service(Empty, '~/reset', self.reset_callback)
@@ -46,15 +43,13 @@ class one_one_field(Node):
         # see if reset flag has been sent
         self.reset_sub = self.create_subscription(Empty_msg, "~/reset_flag", self.reset_pos_callback, 10)
         
-        # see if commands have been sent by simulator
+        # see if rs_env should be notified
         self.state_sub = self.create_subscription(Empty_msg, "~/update", self.state_sub_callback, 10)
-        self.defender_state_sub = self.create_subscription(Empty_msg, "~/defender_update", self.defender_state_callback, 10)
         
         # publish notification to rs_env
-        self.notify_env = self.create_publisher(Empty_msg, "attacker_env/update", 10)
-        self.notify_def_env = self.create_publisher(Empty_msg, "defender_env/def_update", 10)
+        self.notify_env = self.create_publisher(Empty_msg, "robo_player/update", 10)
         
-        self.timer_period = 0.01
+        self.timer_period = 0.001
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
         
         # generate marker for arena
@@ -62,7 +57,7 @@ class one_one_field(Node):
         self.marker_generate()
         self.broadcaster = TransformBroadcaster(self)
         
-        # ATTACKER action param
+        # robo action param
         self.startx = 0.
         self.starty = 0.
         self.posx = 0.
@@ -74,20 +69,6 @@ class one_one_field(Node):
         self.dash_dir = 0.
         self.PLAYER_MAX_SPEED = 1
         self.quaternion = Quaternion()
-        
-        # DEFENDER action param
-        self.def_startx = 2.0
-        self.def_starty = 0.0
-        self.def_posx = 0.0
-        self.def_posy = 0.0
-        self.def_velx = 0.
-        self.def_vely = 0.
-        self.def_dash_speed = 0.
-        self.def_dash_dir = 0.
-        self.def_ang = 0.0
-        self.DEFENDER_MAX_SPEED = 0.8
-        self.def_time = py_time.time()
-        self.def_quaternion = Quaternion()
         
         # publish marker for ball
         ## the ball will move shorter distances 
@@ -115,7 +96,6 @@ class one_one_field(Node):
         
         # state param
         self.update_step = False
-        self.defender_state_step = False
         
         ###### SET TO TRUE WHEN EVALUATING MODEL ######
         self.evaluate = False
@@ -130,36 +110,6 @@ class one_one_field(Node):
         self.posy = np.random.uniform(low=-1, high=1.0)
         self.ball_posx = self.posx + 0.2
         self.ball_posy = self.posy
-        
-        # reset defender position
-        self.def_posx = 2.0
-        self.def_posy = 0.0
-    
-    def defender_vel_callback(self, def_vel: Pose2D):
-        """
-        Process defender's dash command
-        
-        Input:
-            - def_vel: [speed, dir, 0]
-        """
-        self.def_dash_speed = (def_vel.x/100.) * self.DEFENDER_MAX_SPEED
-        self.def_dash_dir = (def_vel.y * math.pi)/180.
-        self.def_ang = (def_vel.y * math.pi)/180.
-        
-        self.def_velx = self.def_dash_speed * math.cos(self.def_dash_dir)
-        self.def_vely = self.def_dash_speed * math.sin(self.def_dash_dir)
-        
-        quat = quaternion_from_euler(0., 0., self.def_ang, 'ryxz')
-        self.def_quaternion.x = quat[0]
-        self.def_quaternion.y = quat[1]
-        self.def_quaternion.z = quat[2]
-        self.def_quaternion.w = quat[3]
-        
-        self.def_time = py_time.time()
-    
-    def defender_state_callback(self, _):
-        
-        self.defender_state_step = True
     
     def state_sub_callback(self, _):
         
@@ -181,7 +131,7 @@ class one_one_field(Node):
         Input:
             - pose: [speed, dir, 0]
         """
-        self.dash_speed = (pose.x/100.)*self.PLAYER_MAX_SPEED
+        self.dash_speed = (pose.x/100)*self.PLAYER_MAX_SPEED
         self.dash_dir = (pose.y * math.pi)/180.
         self.ang = (pose.y * math.pi)/180.
         
@@ -367,40 +317,7 @@ class one_one_field(Node):
         # calculate time elapsed from last receiving dash cmd
         curr_time = py_time.time()
         robot_travel_time = curr_time - self.refresh_time
-        defender_travel_time = curr_time - self.def_time
-        
-        ######## DEFENDER UPDATES ###########
-        #####################################
-        self.get_logger().info("update defender pos: " + str(self.defender_state_step))
-        if self.defender_state_step or self.evaluate:
-            self.def_posx += defender_travel_time * self.SCALING * self.def_velx
-            self.def_posy += defender_travel_time * self.SCALING * self.def_vely
-            
-            defender_pos = Pose2D()
-            defender_pos.x = self.def_posx
-            defender_pos.y = self.def_posy
-            defender_pos.theta = self.def_ang
-            self.defender_pub.publish(defender_pos)
-            
-        time = self.get_clock().now().to_msg()
-        world_defender = TransformStamped()
-        world_defender.header.stamp = time
-        world_defender.header.frame_id = "red/base_footprint"
-        world_defender.child_frame_id = "red/base_link"
-        world_defender.transform.translation.x = self.def_posx
-        world_defender.transform.translation.y = self.def_posy
-        world_defender.transform.rotation.x = self.def_quaternion.x
-        world_defender.transform.rotation.y = self.def_quaternion.y
-        world_defender.transform.rotation.z = self.def_quaternion.z
-        world_defender.transform.rotation.w = self.def_quaternion.w
-        self.broadcaster.sendTransform(world_defender)
-        
-        if self.defender_state_step:
-            self.notify_def_env.publish(Empty_msg())
-            self.defender_update_step = False
-        
-        ######## ATTACKER UPDATES ###########
-        #####################################
+
         ball_to_robo = self.player_to_ball_dist()
         if self.update_step or self.evaluate:
             # calculate current robot position
@@ -442,23 +359,23 @@ class one_one_field(Node):
         world_robot.transform.rotation.z = self.quaternion.z
         world_robot.transform.rotation.w = self.quaternion.w
         self.broadcaster.sendTransform(world_robot)
-        
+
         # publish the position of the robot and ball
         r_pos = Pose2D()
         r_pos.x = self.posx
         r_pos.y = self.posy
         r_pos.theta = self.ang
         self.robot_pos_pub.publish(r_pos)
-        
+
         ball_pos = Point()
         ball_pos.x = self.ball_posx
         ball_pos.y = self.ball_posy
         self.ball_pos_pub.publish(ball_pos)
-        
+
         self.player_state = State.STOPPED
         self.ball_state = State.STOPPED
         self.refresh_time = py_time.time()
-        
+
         if self.update_step:
             self.notify_env.publish(Empty_msg())
             self.update_step = False
@@ -466,7 +383,7 @@ class one_one_field(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    arena_pub = one_one_field()
+    arena_pub = field()
     rclpy.spin(arena_pub)
     rclpy.shutdown()
 

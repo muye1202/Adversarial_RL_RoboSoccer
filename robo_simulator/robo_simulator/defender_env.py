@@ -8,15 +8,16 @@ from std_msgs.msg import Empty
 from rl_interfaces.msg import Info
 
 
-class RoboPlayer(Node):
+class Defender(Node):
     
     arena_range_x = 3.5
     arena_range_y = arena_range_x/2
-    robot_pos = Pose2D()
+    robot_pos = Pose2D()   # this is in radians
     ball_pos = Point()
+    defender_pos = Pose2D()   # this is in radians
 
-    def __init__(self, role="attacker"):
-        super().__init__("robo_player")
+    def __init__(self):
+        super().__init__("defender_env")
         # create action space for the agent
         # each agent can do the following things:
         # moving speed (velocity), moving direction (turn Moment),
@@ -24,15 +25,9 @@ class RoboPlayer(Node):
         # If defender, add in tackle action (tackle power).
         # For details:
         # https://rcsoccersim.readthedocs.io/en/latest/soccerclient.html#control-commands
-        if role == "defender":
-            # move_speed move_dir tackle
-            self.action_space = Box(low=np.array([0., -np.pi, -90.]), \
-                                    high=np.array([100., np.pi, 90.]))
-        else:
-            # [move_speed move_dir kick_pow kick_dir]
-            # the kick direction needs to be within view angle
-            self.action_space = Box(low=np.array([30., -90]), \
-                                    high=np.array([70., 90]))
+        # move_speed move_dir tackle
+        self.action_space = Box(low=np.array([0., -np.pi]), \
+                                high=np.array([100., np.pi]))
         
         # create state space of the agent
         # the state space of the agent includes:
@@ -46,7 +41,7 @@ class RoboPlayer(Node):
         # last ball position
         self.last_ball_dist = self.arena_range_x
         self.last_ball_dist_y = 0.
-        
+
         #######################################
         timer_period = 0.01
         self.timer_ = self.create_timer(timer_period, self.timer_callback)
@@ -55,26 +50,34 @@ class RoboPlayer(Node):
         self.ball_sub = self.create_subscription(Point, "one_one/ball_pos", self.ball_callback, 10)
         self.robot_sub = self.create_subscription(Pose2D, "one_one/robot_pos", self.robot_callback, 10)
         self.last_dir = 0.
+        self.defender_sub = self.create_subscription(Pose2D, "one_one/defender_pos", self.defender_pos_callback, 10)
         
         # publish step function update
-        self.step_update_pub = self.create_publisher(Info, "one_vs_one/step_info", 1)
-        self.step_info = Info()
+        self.defender_pub = self.create_publisher(Info, "one_vs_one/defender_info", 1)
         
-        # see if step function should be called to update rewards
-        self.state_sub = self.create_subscription(Empty, "~/update", self.update_callback, 10)
-        self.step_state = False
+        # self.defender_pub = self.create_publisher(Info, "rs_simulator/defender_info", 1)
+
+        # see if the step function should be called to updtate rewards
+        self.def_state_sub = self.create_subscription(Empty, "~/def_update", self.def_update_callback, 10)
+        self.def_update = False
         
         # count how many steps have been taken
         self.count_steps = 0.
+        
+        # last dist between players
+        self.last_dist_players = 0.0
     
     def timer_callback(self):
-        if self.step_state:
+        if self.def_update:
             self.step()
             
-            self.step_state = False
+            self.def_update = False
     
-    def update_callback(self, _):
-        self.step_state = True
+    def defender_pos_callback(self, defender_pos: Pose2D):
+        self.defender_pos = defender_pos
+    
+    def def_update_callback(self, _):
+        self.def_update = True
     
     def ball_callback(self, ball_pos: Point):
         self.ball_pos = ball_pos
@@ -87,11 +90,10 @@ class RoboPlayer(Node):
         return math.sqrt((self.ball_pos.x - self.robot_pos.x)**2 + 
                          (self.ball_pos.y - self.robot_pos.y)**2)
     
-    def step(self):
+    def step(self, role):
         done = False
         rewards = 0.0
-        
-        # self.get_logger().info("robot position: " + str(self.robot_pos.x) + " " + str(self.robot_pos.y))
+
         ### REWARDS ###
         # For attackers:
         #       1. For each step without scoring, reward = 0
@@ -106,96 +108,114 @@ class RoboPlayer(Node):
         #       For each step without being scored, reward = +1
         #       Taking control over the ball, reward = +10
         #       Blocking shooting route, reward = +1
-        
+
         # check whether the robot moves towards
         # the goal in the past episode:
-        if self.last_ball_dist - self.ball_to_goal_dist() > 0.01:    
-            rewards += 0.5
-            
-            # self.get_logger().info("to goal dist decreased: " + str(self.ball_to_goal_dist()-self.last_ball_dist))
-            # self.last_ball_dist = self.ball_to_goal_dist()
-
-        elif self.last_ball_dist - self.ball_to_goal_dist() < 0.01:
-            rewards -= 0.05
-            
-            # self.get_logger().info("to goal dist increased: " + str(self.ball_to_goal_dist()-self.last_ball_dist))
-            # self.last_ball_dist = self.ball_to_goal_dist()
-            
-        #The robot should be rewarded if it faces the goal direction
-        if self.is_player_facing_goal():
-            rewards += 0.1
-            
-        # check whether the robot is advancing to the goal
         if self.is_scored():
-            rewards += 10.
+            rewards -= 10.0
             done = True
             
         if not self.is_scored() and self.is_dead_ball():
             if rewards == 0.:
-                rewards = -0.01
+                    rewards = -0.1
             else:
-                rewards -= 0.01
+                rewards -= 0.1
 
-            done = True
+                done = True
 
-        self.step_info.states = [self.ball_pos.x, self.ball_pos.y]
-        self.step_info.rewards = rewards
-        self.step_info.done = done
-        
-        self.step_update_pub.publish(self.step_info)
-        self.last_dir = self.robot_pos.theta
-        self.last_ball_dist = self.ball_to_goal_dist()
+        if self.is_player_facing(role="attacker"):
+            rewards += 0.5
+
+        if self.dist_between_players() < self.last_dist_players:
+            rewards += 0.1
+
+        step_info = Info()
+        step_info.states = [self.defender_pos.x, self.defender_pos.y]
+        step_info.rewards = rewards
+        step_info.done = done
+        self.last_dist_players = self.dist_between_players()
+
+        self.defender_pub.publish(step_info)
+
+    def is_player_facing(self, role):
+        """
+        Is player facing another one
+        """
+
+        # check if defender can "see" attacker
+        angle_between_players = math.degrees(math.atan2(self.robot_pos.y - self.defender_pos.y,
+                                                            self.robot_pos.x - self.defender_pos.x))
+        def_facing = math.degrees(self.defender_pos.theta)
+        attacker_facing = math.degrees(self.robot_pos.theta)
+
+        if role == "attacker":
+            if def_facing > 180.0:
+                def_facing = -(360 - def_facing)
+                
+            angle_diff = abs(def_facing - angle_between_players)
+            return (angle_diff <= 10.0)
             
+        # check if the attacker is running into the defender
+        if attacker_facing > 180.0:
+            attacker_facing = -(360 - attacker_facing)
+                
+        angle_diff = abs(attacker_facing - angle_between_players)
+        return (angle_diff <= 10.0)
 
-    def render(self):
-        pass
-    
+    def dist_between_players(self):
+        """
+        Calculate distance between attacker and defender
+        """
+        
+        return math.sqrt((self.robot_pos.x - self.defender_pos.x)**2
+                + (self.robot_pos.y - self.defender_pos.y)**2)
+
     def is_scored(self):
         """
         Check whether the attacking side has scored.
         """
-        
+
         return (self.ball_pos.x >= 0.5*self.arena_range_x-0.2 and
                 self.ball_pos.y <= 0.1*self.arena_range_y-0.2 and
                 self.ball_pos.y >= 0.1*self.arena_range_y+0.2)
-        
+
     def is_dead_ball(self):
         """
         Check whether the ball is out of range.
         """
-        
+
         return (self.ball_pos.x <= -self.arena_range_x-0.2 or
                 self.ball_pos.x >= self.arena_range_x+0.2 or
                 self.ball_pos.y <= -self.arena_range_y-0.2 or
                 self.ball_pos.y >= self.arena_range_y+0.2)
-    
+
     def ball_to_goal_dist(self):
         """
         Calculate the distance between the ball and the goal
         """
-        
+
         return (self.arena_range_x - self.ball_pos.x)**2 + (self.ball_pos.y)**2
-    
+
     def is_player_facing_goal(self):
         """
         Determine if the robot is facing the goal
         """
-        
+
         # calculate the angle between goal's left post
         # and the robot
-        left_post_angle = math.degrees(math.atan2(0.4*2*self.arena_range_y-self.robot_pos.y, 
+        left_post_angle = math.degrees(math.atan2(0.4*2*self.arena_range_y-self.robot_pos.y,
                                                   self.arena_range_x-self.robot_pos.x))
-        
-        right_post_angle = math.degrees(math.atan2(self.robot_pos.y+0.4*2*self.arena_range_y, 
+
+        right_post_angle = math.degrees(math.atan2(self.robot_pos.y+0.4*2*self.arena_range_y,
                                                   self.arena_range_x-self.robot_pos.x))
         robot_facing = math.degrees(self.robot_pos.theta)
-        
+
         return (robot_facing <= left_post_angle and
                 robot_facing >= right_post_angle)
 
 def main(args=None):
     rclpy.init(args=args)
-    robot_pub = RoboPlayer()
+    robot_pub = Defender()
     rclpy.spin(robot_pub)
     rclpy.shutdown()
 

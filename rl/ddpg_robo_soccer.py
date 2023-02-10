@@ -40,7 +40,6 @@ Now, let's see how is it implemented.
 import tensorflow as tf
 from keras import layers
 import numpy as np
-import matplotlib.pyplot as plt
 
 """
 We use [OpenAIGym](http://gym.openai.com/docs) to create the environment.
@@ -149,6 +148,11 @@ class Buffer:
         action_batch,
         reward_batch,
         next_state_batch,
+        target_actor,
+        target_critic,
+        actor_model,
+        critic_model,
+        gamma
     ):
         # Training and updating Actor & Critic networks.
         # See Pseudo Code.
@@ -178,7 +182,12 @@ class Buffer:
         )
 
     # We compute the loss and update parameters
-    def learn(self):
+    def learn(self,
+            target_actor,
+            target_critic,
+            actor_model,
+            critic_model,
+            gamma):
         # Get sampling range
         record_range = min(self.buffer_counter, self.buffer_capacity)
         # Randomly sample indices
@@ -191,7 +200,12 @@ class Buffer:
         reward_batch = tf.cast(reward_batch, dtype=tf.float32)
         next_state_batch = tf.convert_to_tensor(self.next_state_buffer[batch_indices])
 
-        self.update(state_batch, action_batch, reward_batch, next_state_batch)
+        self.update(state_batch, action_batch, reward_batch, next_state_batch,
+                    target_actor,
+                    target_critic,
+                    actor_model,
+                    critic_model,
+                    gamma)
 
 
 # This update target parameters slowly
@@ -257,7 +271,7 @@ exploration.
 """
 
 
-def policy(state, noise_object = None):
+def policy(state, actor_model, noise_object = None):
     sampled_actions = tf.squeeze(actor_model(state))
     # reshape the sampled actions
     sampled_actions = tf.reshape(sampled_actions, [1,2])
@@ -273,8 +287,6 @@ def policy(state, noise_object = None):
     outputs = sampled_actions[0]
     outputs[0] = tf.clip_by_value(outputs[0], kickpow_lower_bound, kickpow_upper_bound)   # kick power
     outputs[1] = tf.clip_by_value(outputs[1], kickdir_low, kickdir_high) # kick direction
-    
-    #print("kick dir: " + str(outputs[1]))
 
     return np.squeeze(outputs)
 
@@ -283,98 +295,9 @@ def policy(state, noise_object = None):
 ## Training hyperparameters
 """
 
-std_dev = 0.1
-ou_noise = OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev) * np.ones(1))
-
-actor_model = get_actor()
-critic_model = get_critic()
-
-target_actor = get_actor()
-target_critic = get_critic()
-
-# Making the weights equal initially
-target_actor.set_weights(actor_model.get_weights())
-target_critic.set_weights(critic_model.get_weights())
-
 # Learning rate for actor-critic models
 critic_lr = 0.001
 actor_lr = 0.001
 
 critic_optimizer = tf.keras.optimizers.Adam(critic_lr, clipnorm=0.6)
 actor_optimizer = tf.keras.optimizers.Adam(actor_lr, clipnorm=0.6)
-
-total_episodes = 10000
-# Discount factor for future rewards
-gamma = 0.99
-# Used to update target networks
-tau = 0.005
-
-buffer = Buffer(50000, 64)
-
-# """
-# Now we implement our main training loop, and iterate over episodes.
-# We sample actions using `policy()` and train with `learn()` at each time step,
-# along with updating the Target networks at a rate `tau`.
-# """
-
-# # To store reward history of each episode
-# ep_reward_list = []
-# # To store average reward history of last few episodes
-# avg_reward_list = []
-
-# # Takes about 4 min to train
-# for ep in range(total_episodes):
-
-#     prev_state = env.reset()
-#     episodic_reward = 0
-
-#     while True:
-#         tf_prev_state = tf.expand_dims(tf.convert_to_tensor(prev_state), 0)
-
-#         action = policy(tf_prev_state, ou_noise)
-#         # Recieve state and reward from environment.
-#         state, reward, done, info = env.step(action)
-
-#         buffer.record((prev_state, action, reward, state))
-#         episodic_reward += reward
-
-#         buffer.learn()
-#         update_target(target_actor.variables, actor_model.variables, tau)
-#         update_target(target_critic.variables, critic_model.variables, tau)
-
-#         # End this episode when `done` is True
-#         if done:
-#             break
-
-#         prev_state = state
-
-#     ep_reward_list.append(episodic_reward)
-
-#     # Mean of last 40 episodes
-#     avg_reward = np.mean(ep_reward_list[-40:])
-#     print("Episode * {} * Avg Reward is ==> {}".format(ep, avg_reward))
-#     avg_reward_list.append(avg_reward)
-
-# # Plotting graph
-# # Episodes versus Avg. Rewards
-# plt.plot(avg_reward_list)
-# plt.xlabel("Episode")
-# plt.ylabel("Avg. Epsiodic Reward")
-# plt.show()
-
-# """
-# If training proceeds correctly, the average episodic reward will increase with time.
-# Feel free to try different learning rates, `tau` values, and architectures for the
-# Actor and Critic networks.
-# The Inverted Pendulum problem has low complexity, but DDPG work great on many other
-# problems.
-# Another great environment to try this on is `LunarLandingContinuous-v2`, but it will take
-# more episodes to obtain good results.
-# """
-
-# # Save the weights
-# actor_model.save_weights("pendulum_actor.h5")
-# critic_model.save_weights("pendulum_critic.h5")
-
-# target_actor.save_weights("pendulum_target_actor.h5")
-# target_critic.save_weights("pendulum_target_critic.h5")

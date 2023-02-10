@@ -8,12 +8,11 @@ from std_msgs.msg import Empty
 from enum import Enum, auto
 import numpy as np
 import tensorflow as tf
-from rl.ddpg_robo_soccer import OUActionNoise, Buffer, get_actor
-from rl.ddpg_robo_soccer import policy, get_critic, update_target
+from rl.ddpg_robo_soccer import get_actor
 
 
-kickpow_upper_bound = 70.
-kickpow_lower_bound = 30.
+kickpow_upper_bound = 50.
+kickpow_lower_bound = 20.
 kickdir_low = -90.
 kickdir_high = 90.
 
@@ -56,10 +55,10 @@ class Evaluate(Node):
         self.robot_pos = Pose2D()
         self.arena_range_x = 3.5
         self.arena_range_y = self.arena_range_x/2
-        
+
         # load model
         self.actor_model = get_actor()
-        self.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/attacker_actor.h5")
+        self.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/test1_actor.h5")
         
     def ball_callback(self, ball_pos: Point):
         self.ball_pos = ball_pos

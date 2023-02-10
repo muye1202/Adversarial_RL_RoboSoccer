@@ -25,16 +25,12 @@ critic_model = get_critic()
 target_actor = get_actor()
 target_critic = get_critic()
 
-# # Making the weights equal initially
-# target_actor.set_weights(actor_model.get_weights())
-# target_critic.set_weights(critic_model.get_weights())
-
-total_episodes = 2000
 # Used to update target networks
 tau = 0.005
-
+gamma = 0.99
 buffer = Buffer(50000, 64)
 
+total_episodes = 2000
 # To store reward history of each episode
 ep_reward_list = []
 # To store average reward history of last few episodes
@@ -65,7 +61,7 @@ class rs_simulator(Node):
         
         # tell the rs_env step function should be called
         self.state_pub = self.create_publisher(Empty, "field/update", 10)
-        
+
         # receive ball and robot position
         self.ball_sub = self.create_subscription(Point, "field/ball_pos", self.ball_callback, 10)
         self.robot_sub = self.create_subscription(Pose2D, "field/robot_pos", self.robot_callback, 10)
@@ -90,7 +86,6 @@ class rs_simulator(Node):
         self.episodic_reward = 0
         self.start_train = True
         self.action_list = []
-        # self.file = open("action_taken.txt", "w")
     
     def step_callback(self, step_info: Info):
 
@@ -134,8 +129,7 @@ class rs_simulator(Node):
         # dash towards the ball
         dash_dir = self.turning_angle(ball_pos, self.robot_pos)
         dash_pow = 80.
-        
-        #self.get_logger().info("dash direction: " + str(dash_dir))
+
         self.dash(dash_pow, dash_dir)
         
     def reset_signal(self):
@@ -150,7 +144,7 @@ class rs_simulator(Node):
         if self.ep <= total_episodes:
             if not self.done_episode:
                 tf_prev_state = tf.expand_dims(tf.convert_to_tensor(self.prev_state), 0)
-                action = policy(tf_prev_state, ou_noise)
+                action = policy(tf_prev_state, actor_model=actor_model, noise_object=ou_noise)
 
                 ###### SENDING THE COMMANDS ######  
                 if self.player_to_ball_dist() <= 0.1:
@@ -184,10 +178,10 @@ class rs_simulator(Node):
                         normal_pre_state = self.prev_state / np.linalg.norm(self.prev_state)
 
                     buffer.record((normal_pre_state, action, reward, normal_state))
-                    # buffer.record((self.prev_state, action, reward, state))
                     self.episodic_reward += reward
 
-                    buffer.learn()
+                    buffer.learn(target_actor=target_actor, target_critic=target_critic,
+                                 actor_model=actor_model, critic_model=critic_model, gamma=gamma)
                     update_target(target_actor.variables, actor_model.variables, tau)
                     update_target(target_critic.variables, critic_model.variables, tau)
 

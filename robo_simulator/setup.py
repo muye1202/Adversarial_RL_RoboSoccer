@@ -21,9 +21,12 @@ setup(
     entry_points={
         'console_scripts': [
             'robo_sim = robo_simulator.simulator:main',
-            'soccer_field = robo_simulator.field:main',
+            'attacker_field = robo_simulator.attacker_field:main',
             'rs_env = robo_simulator.rs_env:main',
             'eval_rs = robo_simulator.evaluate:main',
+            'attacker_defender = robo_simulator.one_vs_one_sim:main',
+            'defender_env = robo_simulator.defender_env:main',
+            'one_vs_one_field = robo_simulator.field:main'
         ],
     },
 )

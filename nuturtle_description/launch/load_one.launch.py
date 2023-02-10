@@ -28,14 +28,17 @@ def generate_launch_description():
         DeclareLaunchArgument(name='world_frame', default_value='nusim/world',
                               description="name of the world frame"),
 
-        DeclareLaunchArgument(name='xpos', default_value='0',
+        DeclareLaunchArgument(name='xpos', default_value='0.',
                               description="robot starting x position"),
 
-        DeclareLaunchArgument(name='ypos', default_value='0',
+        DeclareLaunchArgument(name='ypos', default_value='0.',
                               description="robot starting y position"),
 
-        DeclareLaunchArgument(name='zpos', default_value='0',
+        DeclareLaunchArgument(name='zpos', default_value='0.',
                               description="robot starting z position"),
+        
+        DeclareLaunchArgument(name='yaw', default_value='0.',
+                              description="robot facing direction"),
 
         # declare color argument
         DeclareLaunchArgument(name='robot_color', default_value='purple',
@@ -84,14 +87,15 @@ def generate_launch_description():
         ),
 
         # publish static frame nusim/world
-        # Node(
-        #     package='tf2_ros',
-        #     executable='static_transform_publisher',
-        #     arguments=['--frame-id', LaunchConfiguration('world_frame'),
-        #                '--child-frame-id', [LaunchConfiguration('robot_color'),
-        #                                     '/base_footprint'],
-        #                '--x', LaunchConfiguration('xpos'),
-        #                '--y', LaunchConfiguration('ypos'),
-        #                '--z', LaunchConfiguration('zpos')]
-        # )
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            arguments=['--frame-id', LaunchConfiguration('world_frame'),
+                       '--child-frame-id', [LaunchConfiguration('robot_color'),
+                                            '/base_footprint'],
+                       '--x', LaunchConfiguration('xpos'),
+                       '--y', LaunchConfiguration('ypos'),
+                       '--z', LaunchConfiguration('zpos'),
+                       '--yaw', LaunchConfiguration('yaw')]
+        )
     ])
