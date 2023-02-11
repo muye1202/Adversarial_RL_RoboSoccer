@@ -26,7 +26,8 @@ setup(
             'eval_rs = robo_simulator.evaluate:main',
             'attacker_defender = robo_simulator.one_vs_one_sim:main',
             'defender_env = robo_simulator.defender_env:main',
-            'one_vs_one_field = robo_simulator.field:main'
+            'one_vs_one_field = robo_simulator.field:main',
+            "defender_eval = robo_simulator.one_one_evaluate:main"
         ],
     },
 )

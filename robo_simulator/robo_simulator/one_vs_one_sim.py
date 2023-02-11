@@ -8,8 +8,7 @@ from std_msgs.msg import Empty
 from enum import Enum, auto
 import numpy as np
 import tensorflow as tf
-from rl.ddpg_robo_soccer import OUActionNoise, Buffer, get_actor
-from rl.ddpg_robo_soccer import policy, get_critic, update_target
+from rl.ddpg_robo_soccer import OUActionNoise, DDPG_robo
 from rl_interfaces.msg import Info
 import matplotlib.pyplot as plt
 
@@ -21,35 +20,22 @@ ou_noise = OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev) * np.one
 tau = 0.005
 gamma = 0.99
 
-total_episodes = 2000
+total_episodes = 2500
 
 """
 Attacker network
 """
 
-actor_model = get_actor()
-critic_model = get_critic()
-
-target_actor = get_actor()
-target_critic = get_critic()
-
+attacker_ddpg = DDPG_robo(first_low=30., first_high=70., sec_low=-90, sec_high=90.)
 # To store reward history of each episode
 ep_reward_list = []
 # To store average reward history of last few episodes
 avg_reward_list = []
 
-buffer = Buffer(50000, 64)
-
 """
 Defender network
 """
-defender_actor = get_actor()
-defender_critic = get_critic()
-
-defender_target_actor = get_actor()
-defender_target_critic = get_critic()
-
-defend_buffer = Buffer(50000, 64)
+defender_ddpg = DDPG_robo(first_low=50., first_high=100., sec_low=-100, sec_high=100)
 defender_ep_rewards = []
 defender_avg_rewards = []
 
@@ -67,7 +53,7 @@ class one_one_simulator(Node):
     def __init__(self):
         super().__init__("one_vs_one")
 
-        timer_period = 0.01
+        timer_period = 0.005
         self.timer = self.create_timer(timer_period, self.timer_callback)
         self.start_training = True
 
@@ -89,8 +75,8 @@ class one_one_simulator(Node):
         self.robot_sub = self.create_subscription(Pose2D, "one_one/robot_pos", self.robot_callback, 10)
         
         # receive rewards, states, done variables
-        self.rewards_sub = self.create_subscription(Info, "~/step_info", self.step_callback, 1)
-        self.defender_rewards_sub = self.create_subscription(Info, "~/defender_info", self.defender_step_callback, 1)
+        self.rewards_sub = self.create_subscription(Info, "robo_player/step_info", self.step_callback, 1)
+        self.defender_rewards_sub = self.create_subscription(Info, "defend/defender_info", self.defender_step_callback, 1)
         
         # publish reset command to the simulator
         self.reset_pub = self.create_publisher(Empty, "one_one/reset_flag", 10)
@@ -117,6 +103,9 @@ class one_one_simulator(Node):
         self.defender_info = None
         self.defender_episodic_rewards = 0.0
         self.defender_recv_update = False
+        
+        self.ball_prev_pos = np.array([0.2, 0.0])
+        self.defender_prev_pos = np.array([2.0, 0.0])
 
     def step_callback(self, step_info: Info):
 
@@ -170,7 +159,7 @@ class one_one_simulator(Node):
     def follow_ball(self, ball_pos: Point):
         # dash towards the ball
         dash_dir = self.turning_angle(ball_pos, self.robot_pos)
-        dash_pow = 80.
+        dash_pow = 50.
 
         self.dash(dash_pow, dash_dir)
 
@@ -189,19 +178,18 @@ class one_one_simulator(Node):
                 #####################################
                 # sample actions from the network
                 defender_prev_state = tf.expand_dims(tf.convert_to_tensor(self.defender_prev_state), 0)
-                defender_action = policy(defender_prev_state, actor_model=defender_actor, noise_object=ou_noise)
+                defender_action = defender_ddpg.policy(defender_prev_state, noise_object=ou_noise)
                 
                 dash_speed = defender_action[0]
                 dash_dir = defender_action[1]
                 self.defender_dash(dash_speed, dash_dir)
-                
                 self.defender_state_pub.publish(Empty())
                 if self.defender_recv_update:
                     state_list = self.defender_info.states
                     state = np.array([state_list[0], state_list[1]])
                     def_reward = self.defender_info.rewards
                     def_done = self.defender_info.done
-                    
+
                     normal_state = state
                     normal_pre_state = self.defender_prev_state
 
@@ -210,13 +198,14 @@ class one_one_simulator(Node):
                         normal_state = state / np.linalg.norm(state)
                         normal_pre_state = self.defender_prev_state / np.linalg.norm(self.defender_prev_state)
 
-                    defend_buffer.record((normal_pre_state, action, def_reward, normal_state))
+                    defender_ddpg.buffer.record(obs_tuple=(normal_pre_state, defender_action, def_reward, normal_state))
                     self.defender_episodic_rewards += def_reward
 
-                    defend_buffer.learn(target_actor=defender_target_actor, target_critic=defender_target_critic,
-                                 actor_model=defender_actor, critic_model=defender_critic, gamma=gamma)
-                    update_target(defender_target_actor.variables, defender_actor.variables, tau)
-                    update_target(defender_target_critic.variables, defender_critic.variables, tau)
+                    defender_ddpg.buffer.learn(defender_ddpg.target_actor, defender_ddpg.target_critic,
+                                               defender_ddpg.actor_model, defender_ddpg.critic_model, 
+                                               defender_ddpg.critic_optimizer, defender_ddpg.actor_optimizer, gamma=gamma)
+                    defender_ddpg.update_actor_target(tau)
+                    defender_ddpg.update_critic_target(tau)
 
                     # End this episode when `done` is True
                     if def_done:
@@ -224,13 +213,14 @@ class one_one_simulator(Node):
                         self.reset_signal()
 
                     self.defender_prev_state = normal_state
+                    self.defender_prev_pos = state
                     self.defender_recv_update = False
 
                 ####### ATTACKER TRAINING LOOP ######
                 #####################################
                 ######## SENDING THE COMMANDS #######
                 tf_prev_state = tf.expand_dims(tf.convert_to_tensor(self.prev_state), 0)
-                action = policy(tf_prev_state, actor_model=actor_model, noise_object=ou_noise)
+                action = attacker_ddpg.policy(tf_prev_state, noise_object=ou_noise)
 
                 if self.player_to_ball_dist() <= 0.1:
                     self.robo_state = State.BALL_KICKABLE
@@ -241,10 +231,8 @@ class one_one_simulator(Node):
                     self.kick(kick_pow, kick_dir)
 
                     self.robo_state = State.IDLE
-
                     # notify field and step function
                     # a new cmd has been sent
-                    self.get_logger().info("sending cmds")
                     self.state_pub.publish(Empty())
 
                 self.follow_ball(self.ball_pos)
@@ -264,16 +252,14 @@ class one_one_simulator(Node):
                         normal_state = state / np.linalg.norm(state)
                         normal_pre_state = self.prev_state / np.linalg.norm(self.prev_state)
 
-                    buffer.record((normal_pre_state, action, reward, normal_state))
+                    attacker_ddpg.buffer.record(obs_tuple=(normal_pre_state, action, reward, normal_state))
                     self.episodic_reward += reward
 
-                    buffer.learn(target_actor=target_actor, target_critic=target_critic,
-                                 actor_model=actor_model, critic_model=critic_model, gamma=gamma)
-                    update_target(target_actor.variables, actor_model.variables, tau)
-                    update_target(target_critic.variables, critic_model.variables, tau)
-
-                    # !!!!!!!!!!
-                    self.get_logger().info("step status " + str(done))
+                    attacker_ddpg.buffer.learn(attacker_ddpg.target_actor, attacker_ddpg.target_critic,
+                                               attacker_ddpg.actor_model, attacker_ddpg.critic_model, 
+                                               attacker_ddpg.critic_optimizer, attacker_ddpg.actor_optimizer, gamma=gamma)
+                    attacker_ddpg.update_actor_target(tau)
+                    attacker_ddpg.update_critic_target(tau)
 
                     # End this episode when `done` is True
                     if done:
@@ -281,6 +267,7 @@ class one_one_simulator(Node):
                         self.reset_signal()
 
                     self.prev_state = normal_state
+                    self.ball_prev_pos = state
                     self.recv_update = False
 
                 ep_reward_list.append(self.episodic_reward)
@@ -288,7 +275,7 @@ class one_one_simulator(Node):
 
             elif self.done_episode:
                 self.ep += 1
-                self.prev_state = np.array([2., 0.])
+                self.prev_state = np.array([0.2, 0.])
                 self.defender_prev_state = np.array([2., 0.])
                 self.episodic_reward = 0
                 self.defender_episodic_rewards = 0
@@ -305,38 +292,39 @@ class one_one_simulator(Node):
 
                 # save the weights every 1000 episodes:
                 if self.ep % 1000 == 0:
-                    actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_actor.h5")
-                    critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_critic.h5")
+                   attacker_ddpg.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_actor.h5")
+                   attacker_ddpg.critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_critic.h5")
 
-                    target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_target_actor.h5")
-                    target_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_target_critic.h5")
+                   attacker_ddpg.target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_target_actor.h5")
+                   attacker_ddpg.target_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_target_critic.h5")
                     
-                    defender_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_actor.h5")
-                    defender_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_critic.h5")
+                   defender_ddpg.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_actor.h5")
+                   defender_ddpg.critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_critic.h5")
 
-                    defender_target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_target_actor.h5")
-                    defender_target_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_target_critic.h5")
+                   defender_ddpg.target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_target_actor.h5")
+                   defender_ddpg.target_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_target_critic.h5")
 
         else:
             # Plotting graph
             # Episodes versus Avg. Rewards
-            plt.plot(avg_reward_list)
+            plt.plot(avg_reward_list, label="attacker")
+            plt.plot(defender_avg_rewards, label="defender")
             plt.xlabel("Episode")
             plt.ylabel("Avg. Epsiodic Reward")
             plt.show()
 
             # Save the weights
-            actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_actor.h5")
-            critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_critic.h5")
+            attacker_ddpg.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_actor.h5")
+            attacker_ddpg.critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_critic.h5")
 
-            target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_target_actor.h5")
-            target_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_target_critic.h5")
+            attacker_ddpg.target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_target_actor.h5")
+            attacker_ddpg.target_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_target_critic.h5")
             
-            defender_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_actor.h5")
-            defender_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_critic.h5")
+            defender_ddpg.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_actor.h5")
+            defender_ddpg.critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_critic.h5")
 
-            defender_target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_target_actor.h5")
-            defender_target_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_target_critic.h5")
+            defender_ddpg.target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_target_actor.h5")
+            defender_ddpg.target_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/attacker_target_critic.h5")
 
 
 def main(args=None):

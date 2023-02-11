@@ -54,7 +54,7 @@ class one_one_field(Node):
         self.notify_env = self.create_publisher(Empty_msg, "attacker_env/update", 10)
         self.notify_def_env = self.create_publisher(Empty_msg, "defender_env/def_update", 10)
         
-        self.timer_period = 0.01
+        self.timer_period = 0.005
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
         
         # generate marker for arena
@@ -85,7 +85,7 @@ class one_one_field(Node):
         self.def_dash_speed = 0.
         self.def_dash_dir = 0.
         self.def_ang = 0.0
-        self.DEFENDER_MAX_SPEED = 0.8
+        self.DEFENDER_MAX_SPEED = 1.0
         self.def_time = py_time.time()
         self.def_quaternion = Quaternion()
         
@@ -125,15 +125,14 @@ class one_one_field(Node):
         Reset robot position and ball position upon receiving
         the reset signal.
         """
-        
         self.posx = np.random.uniform(low=-2.0, high=1.0)
         self.posy = np.random.uniform(low=-1, high=1.0)
         self.ball_posx = self.posx + 0.2
         self.ball_posy = self.posy
         
         # reset defender position
-        self.def_posx = 2.0
-        self.def_posy = 0.0
+        self.def_posx = np.clip(self.posx + 2.0, a_min=-3.5, a_max=3.5)
+        self.def_posy = np.clip(self.posy + 0.4, a_min=-3.5/2, a_max=3.5/2)
     
     def defender_vel_callback(self, def_vel: Pose2D):
         """
@@ -368,11 +367,10 @@ class one_one_field(Node):
         curr_time = py_time.time()
         robot_travel_time = curr_time - self.refresh_time
         defender_travel_time = curr_time - self.def_time
-        
         ######## DEFENDER UPDATES ###########
         #####################################
-        self.get_logger().info("update defender pos: " + str(self.defender_state_step))
         if self.defender_state_step or self.evaluate:
+
             self.def_posx += defender_travel_time * self.SCALING * self.def_velx
             self.def_posy += defender_travel_time * self.SCALING * self.def_vely
             
@@ -458,6 +456,7 @@ class one_one_field(Node):
         self.player_state = State.STOPPED
         self.ball_state = State.STOPPED
         self.refresh_time = py_time.time()
+        self.def_time = py_time.time()
         
         if self.update_step:
             self.notify_env.publish(Empty_msg())

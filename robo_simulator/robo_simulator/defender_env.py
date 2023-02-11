@@ -17,24 +17,7 @@ class Defender(Node):
     defender_pos = Pose2D()   # this is in radians
 
     def __init__(self):
-        super().__init__("defender_env")
-        # create action space for the agent
-        # each agent can do the following things:
-        # moving speed (velocity), moving direction (turn Moment),
-        # shooting power and direction.
-        # If defender, add in tackle action (tackle power).
-        # For details:
-        # https://rcsoccersim.readthedocs.io/en/latest/soccerclient.html#control-commands
-        # move_speed move_dir tackle
-        self.action_space = Box(low=np.array([0., -np.pi]), \
-                                high=np.array([100., np.pi]))
-        
-        # create state space of the agent
-        # the state space of the agent includes:
-        # x and y position, which needs to be calculated 
-        # by the visual info coming from visual sensor
-        self.observation_space = Box(low=np.array([-50., -35.]), high=np.array([50., 35.]), dtype=np.float64)
-        
+        super().__init__("defender_env") 
         # state dict: {position of the player, pos of the ball}
         self.state = np.array([0., 0.])
         
@@ -43,7 +26,7 @@ class Defender(Node):
         self.last_ball_dist_y = 0.
 
         #######################################
-        timer_period = 0.01
+        timer_period = 0.005
         self.timer_ = self.create_timer(timer_period, self.timer_callback)
 
         # receive ball and robot position
@@ -53,9 +36,7 @@ class Defender(Node):
         self.defender_sub = self.create_subscription(Pose2D, "one_one/defender_pos", self.defender_pos_callback, 10)
         
         # publish step function update
-        self.defender_pub = self.create_publisher(Info, "one_vs_one/defender_info", 1)
-        
-        # self.defender_pub = self.create_publisher(Info, "rs_simulator/defender_info", 1)
+        self.defender_pub = self.create_publisher(Info, "defend/defender_info", 1)
 
         # see if the step function should be called to updtate rewards
         self.def_state_sub = self.create_subscription(Empty, "~/def_update", self.def_update_callback, 10)
@@ -66,6 +47,8 @@ class Defender(Node):
         
         # last dist between players
         self.last_dist_players = 0.0
+        self.last_x_dist = 2.0   # last x dist between players
+        self.last_y_dist = 0.0   # last y dist between players
     
     def timer_callback(self):
         if self.def_update:
@@ -90,24 +73,14 @@ class Defender(Node):
         return math.sqrt((self.ball_pos.x - self.robot_pos.x)**2 + 
                          (self.ball_pos.y - self.robot_pos.y)**2)
     
-    def step(self, role):
+    def step(self):
         done = False
         rewards = 0.0
 
-        ### REWARDS ###
-        # For attackers:
-        #       1. For each step without scoring, reward = 0
-        #       2. Lose the control of the ball, reward = -10
-        #       3. Shooting route blocked by defender, reward = -1
-        #       4. Find a clear route to goal, reward = +5
-        #       5. Score a goal, reward is set to 10
-        #       6. The ball's distance towards the goal advances, reward = + 0.5
-        #       7. The ball is out of field, reward = -5
-        #       8. Inside shooting range to the goal, reward = + 2
-        # For defenders:
-        #       For each step without being scored, reward = +1
-        #       Taking control over the ball, reward = +10
-        #       Blocking shooting route, reward = +1
+        ### DEFENDER REWARDS ###
+        # For each step without being scored, reward = +1
+        # Taking control over the ball, reward = +10
+        # Blocking shooting route, reward = +1
 
         # check whether the robot moves towards
         # the goal in the past episode:
@@ -115,19 +88,25 @@ class Defender(Node):
             rewards -= 10.0
             done = True
             
-        if not self.is_scored() and self.is_dead_ball():
-            if rewards == 0.:
-                    rewards = -0.1
-            else:
-                rewards -= 0.1
+        if not self.is_scored() and self.is_out_of_range():
+            rewards -= 0.1
+            done = True
 
-                done = True
+        if self.dist_between_players() <= 0.3 and self.is_player_facing(role="attacker"):
+            rewards += 10.0
+            done = True
 
-        if self.is_player_facing(role="attacker"):
+        if (self.dist_between_players() < self.last_dist_players
+            and self.is_player_facing(role="attacker")):
             rewards += 0.5
 
-        if self.dist_between_players() < self.last_dist_players:
-            rewards += 0.1
+        elif self.is_player_facing(role="attacker"):
+            rewards += 0.05
+
+        # if self.chasing_attackers():
+        #     rewards += 0.2
+        #     self.last_x_dist = self.robot_pos.x - self.defender_pos.x
+        #     self.last_y_dist = self.robot_pos.y - self.defender_pos.y
 
         step_info = Info()
         step_info.states = [self.defender_pos.x, self.defender_pos.y]
@@ -169,6 +148,16 @@ class Defender(Node):
         
         return math.sqrt((self.robot_pos.x - self.defender_pos.x)**2
                 + (self.robot_pos.y - self.defender_pos.y)**2)
+        
+    def chasing_attackers(self):
+        """
+        Check whether both x and y distance is decreasing 
+        between attackers and defenders.
+        """
+        curr_x = self.robot_pos.x - self.defender_pos.x
+        curr_y = self.robot_pos.y - self.defender_pos.y
+        
+        return (curr_x < self.last_x_dist and curr_y < self.last_y_dist)
 
     def is_scored(self):
         """
@@ -212,6 +201,16 @@ class Defender(Node):
 
         return (robot_facing <= left_post_angle and
                 robot_facing >= right_post_angle)
+        
+    def is_out_of_range(self):
+        """
+        Determine if the defender is out of field.
+        """
+        
+        return (self.defender_pos.x <= -self.arena_range_x-0.2 or
+                self.defender_pos.x >= self.arena_range_x+0.2 or
+                self.defender_pos.y <= -self.arena_range_y-0.2 or
+                self.defender_pos.y >= self.arena_range_y+0.2)
 
 def main(args=None):
     rclpy.init(args=args)

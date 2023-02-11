@@ -2,7 +2,6 @@ import rclpy
 from rclpy.node import Node
 import numpy as np
 import math
-from gym.spaces import Box
 from geometry_msgs.msg import Pose2D, Point
 from std_msgs.msg import Empty
 from rl_interfaces.msg import Info
@@ -15,31 +14,8 @@ class RoboPlayer(Node):
     robot_pos = Pose2D()
     ball_pos = Point()
 
-    def __init__(self, role="attacker"):
+    def __init__(self):
         super().__init__("robo_player")
-        # create action space for the agent
-        # each agent can do the following things:
-        # moving speed (velocity), moving direction (turn Moment),
-        # shooting power and direction.
-        # If defender, add in tackle action (tackle power).
-        # For details:
-        # https://rcsoccersim.readthedocs.io/en/latest/soccerclient.html#control-commands
-        if role == "defender":
-            # move_speed move_dir tackle
-            self.action_space = Box(low=np.array([0., -np.pi, -90.]), \
-                                    high=np.array([100., np.pi, 90.]))
-        else:
-            # [move_speed move_dir kick_pow kick_dir]
-            # the kick direction needs to be within view angle
-            self.action_space = Box(low=np.array([30., -90]), \
-                                    high=np.array([70., 90]))
-        
-        # create state space of the agent
-        # the state space of the agent includes:
-        # x and y position, which needs to be calculated 
-        # by the visual info coming from visual sensor
-        self.observation_space = Box(low=np.array([-50., -35.]), high=np.array([50., 35.]), dtype=np.float64)
-        
         # state dict: {position of the player, pos of the ball}
         self.state = np.array([0., 0.])
         
@@ -48,7 +24,7 @@ class RoboPlayer(Node):
         self.last_ball_dist_y = 0.
         
         #######################################
-        timer_period = 0.01
+        timer_period = 0.005
         self.timer_ = self.create_timer(timer_period, self.timer_callback)
 
         # receive ball and robot position
@@ -57,7 +33,7 @@ class RoboPlayer(Node):
         self.last_dir = 0.
         
         # publish step function update
-        self.step_update_pub = self.create_publisher(Info, "one_vs_one/step_info", 1)
+        self.step_update_pub = self.create_publisher(Info, "robo_player/step_info", 1)
         self.step_info = Info()
         
         # see if step function should be called to update rewards

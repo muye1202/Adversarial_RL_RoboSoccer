@@ -23,29 +23,32 @@ class State(Enum):
     IDLE = auto()
 
 
-class Evaluate(Node):
+class Defender_Evaluate(Node):
     
     def __init__(self):
-        super().__init__("evaluate_rs")
+        super().__init__("defender_eval")
         
         timer_period = 0.01
         self.timer_ = self.create_timer(timer_period, self.timer_callback)
         
         # receive ball and robot position
-        self.ball_sub = self.create_subscription(Point, "field/ball_pos", self.ball_callback, 10)
-        self.robot_sub = self.create_subscription(Pose2D, "field/robot_pos", self.robot_callback, 10)
+        self.ball_sub = self.create_subscription(Point, "one_one/ball_pos", self.ball_callback, 10)
+        self.robot_sub = self.create_subscription(Pose2D, "one_one/robot_pos", self.robot_callback, 10)
+        self.defender_sub = self.create_subscription(Pose2D, "one_one/defender_pos", self.defender_callback, 10)
         
         # publish reset command to the simulator
-        self.reset_pub = self.create_publisher(Empty, "field/reset_flag", 10)
+        self.reset_pub = self.create_publisher(Empty, "one_one/reset_flag", 10)
         
         # send kick cmd
-        self.kick_pub = self.create_publisher(Point, "field/kick", 10)
+        self.kick_pub = self.create_publisher(Point, "one_one/kick", 10)
         
         # send robot velocity cmd
-        self.vel_pub = self.create_publisher(Pose2D, "field/player_vel", 10)
+        self.vel_pub = self.create_publisher(Pose2D, "one_one/player_vel", 10)
+        # send defender dash cmd
+        self.defender_vel_pub = self.create_publisher(Pose2D, "one_one/defender_vel", 10)
         
         # publish reset command to the simulator
-        self.reset_pub = self.create_publisher(Empty, "field/reset_flag", 10)
+        self.reset_pub = self.create_publisher(Empty, "one_one/reset_flag", 10)
         
         # field params
         self.ball_pos = Point()
@@ -55,10 +58,16 @@ class Evaluate(Node):
         self.robot_pos = Pose2D()
         self.arena_range_x = 3.5
         self.arena_range_y = self.arena_range_x/2
+        self.defender_pos = Pose2D()
 
         # load model
         self.actor_model = DDPG_robo(0., 0., 0., 0.)
         self.actor_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/newtest_actor.h5")
+        self.defender_model = DDPG_robo(0.,0.,0.,0.)
+        self.defender_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_actor.h5")
+        
+    def defender_callback(self, def_pos: Pose2D):
+        self.defender_pos = def_pos
         
     def ball_callback(self, ball_pos: Point):
         self.ball_pos = ball_pos
@@ -130,10 +139,24 @@ class Evaluate(Node):
         
     def timer_callback(self):
         ###### SENDING THE COMMANDS ######
-        if self.is_dead_ball() or self.is_scored():
+        if (self.is_dead_ball() or self.is_scored()):
             self.reset_signal()
         
         else:
+            ######### SEND DEFENDER COMMANDS #########
+            defender_pos = np.array([self.defender_pos.x, self.defender_pos.y])
+            def_state = tf.expand_dims(tf.convert_to_tensor(defender_pos), 0)
+            defender_action = self.defender_model.actor_model.predict(def_state)
+            outputs = defender_action[0] * 100.0
+            outputs[0] = tf.clip_by_value(outputs[0], 50., 100.)   # kick power
+            outputs[1] = tf.clip_by_value(outputs[1], -100., 100.) # kick direction
+            
+            defender_dash = Pose2D()
+            defender_dash.x = float(outputs[0])
+            defender_dash.y = float(outputs[1])
+            self.defender_vel_pub.publish(defender_dash)
+            
+            ######### SEND ATTACKER COMMANDS #########
             ball_pos = np.array([self.ball_pos.x, self.ball_pos.y])
             tf_prev_state = tf.expand_dims(tf.convert_to_tensor(ball_pos), 0)
             action = self.actor_model.actor_model.predict(tf_prev_state)
@@ -156,7 +179,7 @@ class Evaluate(Node):
         
 def main(args=None):
     rclpy.init(args=args)
-    robot_pub = Evaluate()
+    robot_pub = Defender_Evaluate()
     rclpy.spin(robot_pub)
     rclpy.shutdown()
 

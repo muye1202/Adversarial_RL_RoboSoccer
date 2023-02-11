@@ -1,42 +1,3 @@
-"""
-Title: Deep Deterministic Policy Gradient (DDPG)
-Author: [amifunny](https://github.com/amifunny)
-Date created: 2020/06/04
-Last modified: 2020/09/21
-Description: Implementing DDPG algorithm on the Inverted Pendulum Problem.
-Accelerator: NONE
-"""
-"""
-## Introduction
-**Deep Deterministic Policy Gradient (DDPG)** is a model-free off-policy algorithm for
-learning continous actions.
-It combines ideas from DPG (Deterministic Policy Gradient) and DQN (Deep Q-Network).
-It uses Experience Replay and slow-learning target networks from DQN, and it is based on
-DPG,
-which can operate over continuous action spaces.
-This tutorial closely follow this paper -
-[Continuous control with deep reinforcement learning](https://arxiv.org/pdf/1509.02971.pdf)
-## Quick theory
-Just like the Actor-Critic method, we have two networks:
-1. Actor - It proposes an action given a state.
-2. Critic - It predicts if the action is good (positive value) or bad (negative value)
-given a state and an action.
-DDPG uses two more techniques not present in the original DQN:
-**First, it uses two Target networks.**
-**Why?** Because it add stability to training. In short, we are learning from estimated
-targets and Target networks are updated slowly, hence keeping our estimated targets
-stable.
-Conceptually, this is like saying, "I have an idea of how to play this well,
-I'm going to try it out for a bit until I find something better",
-as opposed to saying "I'm going to re-learn how to play this entire game after every
-move".
-See this [StackOverflow answer](https://stackoverflow.com/a/54238556/13475679).
-**Second, it uses Experience Replay.**
-We store list of tuples `(state, action, reward, next_state)`, and instead of
-learning only from recent experience, we learn from sampling all of our experience
-accumulated so far.
-Now, let's see how is it implemented.
-"""
 import tensorflow as tf
 from keras import layers
 import numpy as np
@@ -49,11 +10,6 @@ num_states = 2
 print("Size of State Space ->  {}".format(num_states))
 num_actions = 2
 print("Size of Action Space ->  {}".format(num_actions))
-
-kickpow_upper_bound = 70.
-kickpow_lower_bound = 30.
-kickdir_low = -90.
-kickdir_high = 90.
 
 """
 To implement better exploration by the Actor network, we use noisy perturbations,
@@ -94,8 +50,6 @@ class OUActionNoise:
 """
 The `Buffer` class implements Experience Replay.
 ---
-![Algorithm](https://i.imgur.com/mS6iGyJ.jpg)
----
 **Critic loss** - Mean Squared Error of `y - Q(s, a)`
 where `y` is the expected return as seen by the Target network,
 and `Q(s, a)` is action value predicted by the Critic network. `y` is a moving target
@@ -107,8 +61,7 @@ Hence we update the Actor network so that it produces actions that get
 the maximum predicted value as seen by the Critic, for a given state.
 """
 
-
-class Buffer:
+class Buffer():
     def __init__(self, buffer_capacity=100000, batch_size=64):
         # Number of "experiences" to store at max
         self.buffer_capacity = buffer_capacity
@@ -152,6 +105,8 @@ class Buffer:
         target_critic,
         actor_model,
         critic_model,
+        critic_optimizer,
+        actor_optimizer,
         gamma
     ):
         # Training and updating Actor & Critic networks.
@@ -182,12 +137,14 @@ class Buffer:
         )
 
     # We compute the loss and update parameters
-    def learn(self,
-            target_actor,
-            target_critic,
-            actor_model,
-            critic_model,
-            gamma):
+    def learn(self, 
+              target_actor,
+              target_critic,
+              actor_model,
+              critic_model,
+              critic_optimizer,
+              actor_optimizer,
+              gamma):
         # Get sampling range
         record_range = min(self.buffer_counter, self.buffer_capacity)
         # Randomly sample indices
@@ -205,99 +162,109 @@ class Buffer:
                     target_critic,
                     actor_model,
                     critic_model,
+                    critic_optimizer,
+                    actor_optimizer,
                     gamma)
 
+class DDPG_robo():
+    def __init__(self, first_low, first_high, sec_low, sec_high):
+        """
+        DDPG network for robot soccer.
+        """
+        # Learning rate for actor-critic models
+        critic_lr = 0.001
+        actor_lr = 0.001
 
-# This update target parameters slowly
-# Based on rate `tau`, which is much less than one.
-@tf.function
-def update_target(target_weights, weights, tau):
-    for (a, b) in zip(target_weights, weights):
-        a.assign(b * tau + a * (1 - tau))
+        self.first_low = first_low
+        self.first_high = first_high
+        self.sec_low = sec_low
+        self.sec_high = sec_high
+        self.critic_optimizer = tf.keras.optimizers.Adam(critic_lr, clipnorm=0.6)
+        self.actor_optimizer = tf.keras.optimizers.Adam(actor_lr, clipnorm=0.6)
+        self.actor_model = self.get_actor()
+        self.critic_model = self.get_critic()
+        self.target_actor = self.get_actor()
+        self.target_critic = self.get_critic()
+        self.buffer = Buffer()
 
+    # This update target parameters slowly
+    # Based on rate `tau`, which is much less than one.
+    @tf.function
+    def update_actor_target(self, tau):
+        for (a, b) in zip(self.target_actor.variables, self.actor_model.variables):
+            a.assign(b * tau + a * (1 - tau))
+            
+    @tf.function
+    def update_critic_target(self, tau):
+        for (a, b) in zip(self.target_critic.variables, self.critic_model.variables):
+            a.assign(b * tau + a * (1 - tau))
 
-"""
-Here we define the Actor and Critic networks. These are basic Dense models
-with `ReLU` activation.
-Note: We need the initialization for last layer of the Actor to be between
-`-0.003` and `0.003` as this prevents us from getting `1` or `-1` output values in
-the initial stages, which would squash our gradients to zero,
-as we use the `tanh` activation.
-"""
+    """
+    Here we define the Actor and Critic networks. These are basic Dense models
+    with `ReLU` activation.
+    Note: We need the initialization for last layer of the Actor to be between
+    `-0.003` and `0.003` as this prevents us from getting `1` or `-1` output values in
+    the initial stages, which would squash our gradients to zero,
+    as we use the `tanh` activation.
+    """
+    def get_actor(self):
+        # Initialize weights between -3e-3 and 3-e3
+        last_init = tf.random_uniform_initializer(minval=-0.003, maxval=0.003)
 
+        inputs = layers.Input(shape=(num_states))
+        out = layers.Dense(256, activation="leaky_relu", use_bias=True)(inputs)
+        out = layers.Dense(256, activation="leaky_relu", use_bias=True)(out)
+        outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=last_init)(out)
 
-def get_actor():
-    # Initialize weights between -3e-3 and 3-e3
-    last_init = tf.random_uniform_initializer(minval=-0.003, maxval=0.003)
+        # Upper bound of the action space
+        ## needs to bound kick pow and dir
+        print("defender dash: " + str(outputs[0]) + " " + str(outputs[1]))
+        
+        max_num = np.array([self.first_low, self.first_high, self.sec_low, self.sec_low])
+        outputs = outputs * np.amax(max_num)
+        model = tf.keras.Model(inputs, outputs)
+        return model
 
-    inputs = layers.Input(shape=(num_states))
-    out = layers.Dense(256, activation="relu", use_bias=True)(inputs)
-    out = layers.Dense(256, activation="relu", use_bias=True)(out)
-    outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=last_init)(out)
+    def get_critic(self):
+        # State as input
+        state_input = layers.Input(shape=(num_states))
+        state_out = layers.Dense(16, activation="leaky_relu", use_bias=True)(state_input)
+        state_out = layers.Dense(32, activation="leaky_relu", use_bias=True)(state_out)
 
-    # Upper bound of the action space
-    ## needs to bound kick pow and dir
-    outputs = outputs * kickdir_high
-    model = tf.keras.Model(inputs, outputs)
-    return model
+        # Action as input
+        action_input = layers.Input(shape=(num_actions))
+        action_out = layers.Dense(32, activation="tanh", use_bias=True)(action_input)
 
+        # Both are passed through seperate layer before concatenating
+        concat = layers.Concatenate(axis=1)([state_out, action_out])
 
-def get_critic():
-    # State as input
-    state_input = layers.Input(shape=(num_states))
-    state_out = layers.Dense(16, activation="relu", use_bias=True)(state_input)
-    state_out = layers.Dense(32, activation="relu", use_bias=True)(state_out)
+        out = layers.Dense(256, activation="leaky_relu", use_bias=True)(concat)
+        out = layers.Dense(256, activation="leaky_relu", use_bias=True)(out)
+        outputs = layers.Dense(1)(out)
 
-    # Action as input
-    action_input = layers.Input(shape=(num_actions))
-    action_out = layers.Dense(32, activation="tanh", use_bias=True)(action_input)
+        # Outputs single value for give state-action
+        model = tf.keras.Model([state_input, action_input], outputs)
 
-    # Both are passed through seperate layer before concatenating
-    concat = layers.Concatenate(axis=1)([state_out, action_out])
+        return model
 
-    out = layers.Dense(256, activation="relu", use_bias=True)(concat)
-    out = layers.Dense(256, activation="relu", use_bias=True)(out)
-    outputs = layers.Dense(1)(out)
+    def policy(self, state, noise_object = None):
+        """
+        Return an action sampled by the actor model.
+        """
+        sampled_actions = tf.squeeze(self.actor_model(state))
+        # reshape the sampled actions
+        sampled_actions = tf.reshape(sampled_actions, [1,2])
+        
+        if noise_object is not None:
+            noise = noise_object()
+        else:
+            noise = 0.
+        # Adding noise to action
+        sampled_actions = sampled_actions.numpy() + noise
 
-    # Outputs single value for give state-action
-    model = tf.keras.Model([state_input, action_input], outputs)
+        # We make sure action is within bounds
+        outputs = sampled_actions[0]
+        outputs[0] = tf.clip_by_value(outputs[0], self.first_low, self.first_high)   # kick power
+        outputs[1] = tf.clip_by_value(outputs[1], self.sec_low, self.sec_high) # kick direction
 
-    return model
-
-
-"""
-`policy()` returns an action sampled from our Actor network plus some noise for
-exploration.
-"""
-
-
-def policy(state, actor_model, noise_object = None):
-    sampled_actions = tf.squeeze(actor_model(state))
-    # reshape the sampled actions
-    sampled_actions = tf.reshape(sampled_actions, [1,2])
-    
-    if noise_object is not None:
-        noise = noise_object()
-    else:
-        noise = 0.
-    # Adding noise to action
-    sampled_actions = sampled_actions.numpy() + noise
-
-    # We make sure action is within bounds
-    outputs = sampled_actions[0]
-    outputs[0] = tf.clip_by_value(outputs[0], kickpow_lower_bound, kickpow_upper_bound)   # kick power
-    outputs[1] = tf.clip_by_value(outputs[1], kickdir_low, kickdir_high) # kick direction
-
-    return np.squeeze(outputs)
-
-
-"""
-## Training hyperparameters
-"""
-
-# Learning rate for actor-critic models
-critic_lr = 0.001
-actor_lr = 0.001
-
-critic_optimizer = tf.keras.optimizers.Adam(critic_lr, clipnorm=0.6)
-actor_optimizer = tf.keras.optimizers.Adam(actor_lr, clipnorm=0.6)
+        return np.squeeze(outputs)

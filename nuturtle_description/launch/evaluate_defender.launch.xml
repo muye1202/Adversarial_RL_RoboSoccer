@@ -1,0 +1,22 @@
+<launch>
+    <include file="$(find-pkg-share nuturtle_description)/launch/load_one.launch.py">
+        <arg name="robot_color" value="purple"/>
+        <arg name='use_rviz' value='false'/>
+        <arg name='xpos' value='0.0'/>
+        <arg name='ypos' value='0.0'/>
+        <arg name='zpos' value='0.0'/>
+    </include>
+
+    <include file="$(find-pkg-share nuturtle_description)/launch/load_one.launch.py">
+        <arg name="robot_color" value="red"/>
+        <arg name='use_rviz' value='false'/>
+        <arg name='xpos' value='2.0'/>
+        <arg name='ypos' value='0.0'/>
+        <arg name='zpos' value='0.0'/>
+        <arg name='yaw' value='3.14'/>
+    </include>
+
+    <node pkg='rviz2' exec='rviz2' name='rviz2' output='screen' args='-d $(find-pkg-share nuturtle_description)/rviz/one_v_one.rviz'/>
+
+    <node pkg='robo_simulator' exec='one_vs_one_field' name='one_one'/>
+</launch>
