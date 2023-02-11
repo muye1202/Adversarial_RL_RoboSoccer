@@ -44,9 +44,6 @@ class Evaluate(Node):
         # send robot velocity cmd
         self.vel_pub = self.create_publisher(Pose2D, "field/player_vel", 10)
         
-        # publish reset command to the simulator
-        self.reset_pub = self.create_publisher(Empty, "field/reset_flag", 10)
-        
         # field params
         self.ball_pos = Point()
         self.ball_pos.x = 0.2

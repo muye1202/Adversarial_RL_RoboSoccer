@@ -76,9 +76,7 @@ class one_one_field(Node):
         self.quaternion = Quaternion()
         
         # DEFENDER action param
-        self.def_startx = 2.0
-        self.def_starty = 0.0
-        self.def_posx = 0.0
+        self.def_posx = -2.0
         self.def_posy = 0.0
         self.def_velx = 0.
         self.def_vely = 0.
@@ -116,6 +114,7 @@ class one_one_field(Node):
         # state param
         self.update_step = False
         self.defender_state_step = False
+        self.reset_flag = False
         
         ###### SET TO TRUE WHEN EVALUATING MODEL ######
         self.evaluate = False
@@ -130,9 +129,10 @@ class one_one_field(Node):
         self.ball_posx = self.posx + 0.2
         self.ball_posy = self.posy
         
-        # reset defender position
-        self.def_posx = np.clip(self.posx + 2.0, a_min=-3.5, a_max=3.5)
-        self.def_posy = np.clip(self.posy + 0.4, a_min=-3.5/2, a_max=3.5/2)
+        self.def_time = py_time.time()
+        self.refresh_time = py_time.time()
+        
+        self.reset_flag = True
     
     def defender_vel_callback(self, def_vel: Pose2D):
         """
@@ -235,7 +235,7 @@ class one_one_field(Node):
         z_pos = 0.
 
         marker_shape = Marker()
-        marker_shape.header.frame_id = "purple/base_footprint"
+        marker_shape.header.frame_id = "nusim/world"
         marker_shape.ns = "long_side_0"
         marker_shape.id = 0
         marker_shape.action = 0
@@ -256,7 +256,7 @@ class one_one_field(Node):
         self.marker_arr.markers.append(marker_shape)
 
         marker_shape = Marker()
-        marker_shape.header.frame_id = "purple/base_footprint"
+        marker_shape.header.frame_id = "nusim/world"
         marker_shape.ns = "long_side_1"
         marker_shape.id = 1
         marker_shape.action = 0
@@ -278,7 +278,7 @@ class one_one_field(Node):
 
         # 1st y side of the arena
         marker_shape = Marker()
-        marker_shape.header.frame_id = "purple/base_footprint"
+        marker_shape.header.frame_id = "nusim/world"
         marker_shape.ns = "y_side_0"
         marker_shape.id = 2
         marker_shape.action = 0
@@ -300,7 +300,7 @@ class one_one_field(Node):
 
         # goal side marker up
         marker_shape = Marker()
-        marker_shape.header.frame_id = "purple/base_footprint"
+        marker_shape.header.frame_id = "nusim/world"
         marker_shape.ns = "goal_up"
         marker_shape.id = 3
         marker_shape.action = 0
@@ -322,7 +322,7 @@ class one_one_field(Node):
         
         # goal side marker down
         marker_shape = Marker()
-        marker_shape.header.frame_id = "purple/base_footprint"
+        marker_shape.header.frame_id = "nusim/world"
         marker_shape.ns = "goal_down"
         marker_shape.id = 3
         marker_shape.action = 0
@@ -343,7 +343,7 @@ class one_one_field(Node):
         self.marker_arr.markers.append(marker_shape)
     
     def ball_marker(self):
-        self.ball.header.frame_id = "purple/base_footprint"
+        self.ball.header.frame_id = "nusim/world"
         self.ball.ns = "soccer"
         self.ball.id = 0
         self.ball.type = 2
@@ -379,6 +379,12 @@ class one_one_field(Node):
             defender_pos.y = self.def_posy
             defender_pos.theta = self.def_ang
             self.defender_pub.publish(defender_pos)
+            
+        if self.reset_flag:
+            self.def_posx = -2.0
+            self.def_posy = 0.0
+            
+            self.reset_flag = False
             
         time = self.get_clock().now().to_msg()
         world_defender = TransformStamped()
@@ -431,7 +437,7 @@ class one_one_field(Node):
         time = self.get_clock().now().to_msg()
         world_robot = TransformStamped()
         world_robot.header.stamp = time
-        world_robot.header.frame_id = "purple/base_footprint"
+        world_robot.header.frame_id = "nusim/world"
         world_robot.child_frame_id = "purple/base_link"
         world_robot.transform.translation.x = self.posx
         world_robot.transform.translation.y = self.posy
@@ -459,7 +465,7 @@ class one_one_field(Node):
         self.def_time = py_time.time()
         
         if self.update_step:
-            self.notify_env.publish(Empty_msg())
+            # self.notify_env.publish(Empty_msg())
             self.update_step = False
 
 
