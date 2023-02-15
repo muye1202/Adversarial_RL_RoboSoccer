@@ -1,5 +1,6 @@
 import tensorflow as tf
 from keras import layers
+from keras import activations
 import numpy as np
 
 """
@@ -62,7 +63,7 @@ the maximum predicted value as seen by the Critic, for a given state.
 """
 
 class Buffer():
-    def __init__(self, buffer_capacity=100000, batch_size=64):
+    def __init__(self, num_states, buffer_capacity=100000, batch_size=64):
         # Number of "experiences" to store at max
         self.buffer_capacity = buffer_capacity
         # Num of tuples to train on.
@@ -70,13 +71,14 @@ class Buffer():
 
         # Its tells us num of times record() was called.
         self.buffer_counter = 0
+        self.num_states = num_states
 
         # Instead of list of tuples as the exp.replay concept go
         # We use different np.arrays for each tuple element
-        self.state_buffer = np.zeros((self.buffer_capacity, num_states))
+        self.state_buffer = np.zeros((self.buffer_capacity, self.num_states))
         self.action_buffer = np.zeros((self.buffer_capacity, num_actions))
         self.reward_buffer = np.zeros((self.buffer_capacity, 1))
-        self.next_state_buffer = np.zeros((self.buffer_capacity, num_states))
+        self.next_state_buffer = np.zeros((self.buffer_capacity, self.num_states))
 
     # Takes (s,a,r,s') obervation tuple as input
     def record(self, obs_tuple):
@@ -167,7 +169,7 @@ class Buffer():
                     gamma)
 
 class DDPG_robo():
-    def __init__(self, first_low, first_high, sec_low, sec_high):
+    def __init__(self, first_low, first_high, sec_low, sec_high, num_states, flag: str):
         """
         DDPG network for robot soccer.
         """
@@ -175,17 +177,19 @@ class DDPG_robo():
         critic_lr = 0.001
         actor_lr = 0.001
 
+        self.num_states = num_states
+        self.flag = flag
         self.first_low = first_low
         self.first_high = first_high
         self.sec_low = sec_low
         self.sec_high = sec_high
         self.critic_optimizer = tf.keras.optimizers.Adam(critic_lr, clipnorm=0.6)
         self.actor_optimizer = tf.keras.optimizers.Adam(actor_lr, clipnorm=0.6)
-        self.actor_model = self.get_actor()
+        self.actor_model = self.get_actor(self.flag)
         self.critic_model = self.get_critic()
-        self.target_actor = self.get_actor()
+        self.target_actor = self.get_actor(self.flag)
         self.target_critic = self.get_critic()
-        self.buffer = Buffer()
+        self.buffer = Buffer(num_states=num_states)
 
     # This update target parameters slowly
     # Based on rate `tau`, which is much less than one.
@@ -207,39 +211,38 @@ class DDPG_robo():
     the initial stages, which would squash our gradients to zero,
     as we use the `tanh` activation.
     """
-    def get_actor(self):
+    def get_actor(self, flag):
         # Initialize weights between -3e-3 and 3-e3
         last_init = tf.random_uniform_initializer(minval=-0.003, maxval=0.003)
 
-        inputs = layers.Input(shape=(num_states))
-        out = layers.Dense(256, activation="leaky_relu", use_bias=True)(inputs)
-        out = layers.Dense(256, activation="leaky_relu", use_bias=True)(out)
+        inputs = layers.Input(shape=(self.num_states))
+        out = layers.Dense(256, activation="relu", use_bias=True)(inputs)
+        out = layers.Dense(256, activation="relu", use_bias=True)(out)
         outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=last_init)(out)
 
-        # Upper bound of the action space
-        ## needs to bound kick pow and dir
-        print("defender dash: " + str(outputs[0]) + " " + str(outputs[1]))
-        
-        max_num = np.array([self.first_low, self.first_high, self.sec_low, self.sec_low])
-        outputs = outputs * np.amax(max_num)
+        if flag == "predict":
+            max_num = np.array([self.first_low, self.first_high, self.sec_low, self.sec_low])
+            outputs = outputs * np.amax(max_num)
+
         model = tf.keras.Model(inputs, outputs)
         return model
 
     def get_critic(self):
         # State as input
-        state_input = layers.Input(shape=(num_states))
-        state_out = layers.Dense(16, activation="leaky_relu", use_bias=True)(state_input)
-        state_out = layers.Dense(32, activation="leaky_relu", use_bias=True)(state_out)
+        state_input = layers.Input(shape=(self.num_states))
+        state_out = layers.Dense(16, activation="relu", use_bias=True)(state_input)
+        state_out = layers.Dense(32, activation="relu", use_bias=True)(state_out)
 
         # Action as input
         action_input = layers.Input(shape=(num_actions))
+        action_out = layers.Dense(32, activation="relu", use_bias=True)(action_input)
         action_out = layers.Dense(32, activation="tanh", use_bias=True)(action_input)
 
         # Both are passed through seperate layer before concatenating
         concat = layers.Concatenate(axis=1)([state_out, action_out])
 
-        out = layers.Dense(256, activation="leaky_relu", use_bias=True)(concat)
-        out = layers.Dense(256, activation="leaky_relu", use_bias=True)(out)
+        out = layers.Dense(256, activation="relu", use_bias=True)(concat)
+        out = layers.Dense(256, activation="relu", use_bias=True)(out)
         outputs = layers.Dense(1)(out)
 
         # Outputs single value for give state-action
@@ -259,12 +262,13 @@ class DDPG_robo():
             noise = noise_object()
         else:
             noise = 0.
+        
         # Adding noise to action
         sampled_actions = sampled_actions.numpy() + noise
 
         # We make sure action is within bounds
         outputs = sampled_actions[0]
-        outputs[0] = tf.clip_by_value(outputs[0], self.first_low, self.first_high)   # kick power
-        outputs[1] = tf.clip_by_value(outputs[1], self.sec_low, self.sec_high) # kick direction
+        outputs[0] = tf.clip_by_value(outputs[0] * self.first_high, self.first_low, self.first_high)   # kick power
+        outputs[1] = tf.clip_by_value(outputs[1] * self.sec_high, self.sec_low, self.sec_high) # kick direction
 
         return np.squeeze(outputs)

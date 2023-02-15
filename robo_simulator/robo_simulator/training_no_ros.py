@@ -14,7 +14,7 @@ Training loop for the RL network.
 std_dev = 0.2
 ou_noise = OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev) * np.ones(1))
 
-attacker_ddpg = DDPG_robo(first_low=30.0, first_high=70.0, sec_low=-90., sec_high=90.)
+attacker_ddpg = DDPG_robo(first_low=30.0, first_high=70.0, sec_low=-90., sec_high=90., flag="")
 
 total_episodes = 5000
 # Used to update target networks
@@ -319,20 +319,26 @@ class Train():
             ep_reward_list.append(episodic_rewards)
             # Mean of last 40 episodes
             avg_reward = np.mean(ep_reward_list[-40:])
-            print("Episode * {} * Avg Reward is ==> {}".format(episodes, avg_reward))
+            # print("Episode * {} * Avg Reward is ==> {}".format(episodes, avg_reward))
             avg_reward_list.append(avg_reward)
 
             if episodes % 200 == 0:
                 self.x_trajectories.append(self.ball_replay_x)
                 self.y_trajectories.append(self.ball_replay_y)
 
+            # # print model weights
+            # print("model weight norm for episode " + str(episodes))
+            # weight = attacker_ddpg.actor_model.layers[1].get_weights()[0]
+            # weight_norm = np.linalg.norm(weight)
+            # print(weight_norm)
+            
             # save the weights every 1000 episodes:
-            if episodes % 1000 == 0:
-                attacker_ddpg.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/newtest_actor.h5")
-                attacker_ddpg.critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/newtest_critic.h5")
+            # if episodes % 1000 == 0:
+            #     attacker_ddpg.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/newtest_actor.h5")
+            #     attacker_ddpg.critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/newtest_critic.h5")
 
-                attacker_ddpg.target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/newtest_target_actor.h5")
-                attacker_ddpg.target_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/newtest_target_critic.h5")
+            #     attacker_ddpg.target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/newtest_target_actor.h5")
+            #     attacker_ddpg.target_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/newtest_target_critic.h5")
 
         # # plot ball trajectories
         # for i in range(len(self.x_trajectories)):

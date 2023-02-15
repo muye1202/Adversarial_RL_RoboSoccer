@@ -54,7 +54,7 @@ class one_one_field(Node):
         self.notify_env = self.create_publisher(Empty_msg, "attacker_env/update", 10)
         self.notify_def_env = self.create_publisher(Empty_msg, "defender_env/def_update", 10)
         
-        self.timer_period = 0.005
+        self.timer_period = 0.002
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
         
         # generate marker for arena
@@ -76,6 +76,11 @@ class one_one_field(Node):
         self.quaternion = Quaternion()
         
         # DEFENDER action param
+        ## The red robot frame "base_footprint" is 
+        ## rotated so the red robot 0 degree is facing
+        ## the attacker robot; therefore the x = 2 position
+        ## in nusim/world is actually -2.0 in the red robot frame
+        ## because every transform is from base_footprint to base_link
         self.def_posx = -2.0
         self.def_posy = 0.0
         self.def_velx = 0.
@@ -124,8 +129,8 @@ class one_one_field(Node):
         Reset robot position and ball position upon receiving
         the reset signal.
         """
-        self.posx = np.random.uniform(low=-2.0, high=1.0)
-        self.posy = np.random.uniform(low=-1, high=1.0)
+        self.posx = -2.0
+        self.posy = np.random.uniform(low=-0.5, high=0.5)
         self.ball_posx = self.posx + 0.2
         self.ball_posy = self.posy
         
@@ -374,18 +379,12 @@ class one_one_field(Node):
             self.def_posx += defender_travel_time * self.SCALING * self.def_velx
             self.def_posy += defender_travel_time * self.SCALING * self.def_vely
             
-            defender_pos = Pose2D()
-            defender_pos.x = self.def_posx
-            defender_pos.y = self.def_posy
-            defender_pos.theta = self.def_ang
-            self.defender_pub.publish(defender_pos)
-            
         if self.reset_flag:
             self.def_posx = -2.0
             self.def_posy = 0.0
             
             self.reset_flag = False
-            
+
         time = self.get_clock().now().to_msg()
         world_defender = TransformStamped()
         world_defender.header.stamp = time
@@ -398,6 +397,20 @@ class one_one_field(Node):
         world_defender.transform.rotation.z = self.def_quaternion.z
         world_defender.transform.rotation.w = self.def_quaternion.w
         self.broadcaster.sendTransform(world_defender)
+        
+        # transform back to world coordinate
+        Tw_footprint = np.array([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0., 0., 1.]])
+        Tcurr = np.array([[np.cos(-self.def_ang), -np.sin(-self.def_ang), -self.def_posx],
+                            [np.sin(-self.def_ang), np.cos(-self.def_ang), -self.def_posy],
+                            [0.0, 0.0, 1.0]])
+        Tback = np.linalg.inv(Tw_footprint)
+        Tw = np.matmul(Tcurr, Tback)
+        
+        defender_pos = Pose2D()
+        defender_pos.x = Tw[0][2]
+        defender_pos.y = Tw[1][2]
+        defender_pos.theta = np.arccos(Tw[0][0])
+        self.defender_pub.publish(defender_pos)
         
         if self.defender_state_step:
             self.notify_def_env.publish(Empty_msg())

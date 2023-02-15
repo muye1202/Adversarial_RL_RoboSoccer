@@ -24,9 +24,17 @@ class Defender(Node):
         # last ball position
         self.last_ball_dist = self.arena_range_x
         self.last_ball_dist_y = 0.
+        # last player position
+        self.last_attacker_pos = Pose2D()
+        self.last_attacker_pos.x = 0.0
+        self.last_attacker_pos.y = 0.0
 
+        self.last_defender_pos = Pose2D()
+        self.last_defender_pos.x = 2.0
+        self.last_defender_pos.y = 0.0
+        
         #######################################
-        timer_period = 0.005
+        timer_period = 0.002
         self.timer_ = self.create_timer(timer_period, self.timer_callback)
 
         # receive ball and robot position
@@ -43,12 +51,13 @@ class Defender(Node):
         self.def_update = False
         
         # count how many steps have been taken
-        self.count_steps = 0.
+        self.count_steps = 1.0
         
         # last dist between players
         self.last_dist_players = 0.0
         self.last_x_dist = 2.0   # last x dist between players
         self.last_y_dist = 0.0   # last y dist between players
+        self.last_defender_dir = 0.0
     
     def timer_callback(self):
         if self.def_update:
@@ -77,6 +86,7 @@ class Defender(Node):
         done = False
         rewards = 0.0
 
+        in_tackle_range = False
         ### DEFENDER REWARDS ###
         # For each step without being scored, reward = +1
         # Taking control over the ball, reward = +10
@@ -85,45 +95,72 @@ class Defender(Node):
         # check whether the robot moves towards
         # the goal in the past episode:
         if self.is_scored():
-            rewards -= 10.0
+            rewards -= 3.0
+            done = True
+
+        # stop the defender when it runs pass the attacker
+        if not self.is_scored() and self.is_out_of_range():
+            rewards = -1.0
             done = True
             
-        if not self.is_scored() and self.is_out_of_range():
-            rewards -= 0.1
+        elif self.defender_pos.x < 1.0+self.robot_pos.x:
             done = True
 
-        if self.dist_between_players() <= 0.3 and self.is_player_facing(role="attacker"):
-            rewards += 10.0
+        if self.dist_between_players() <= 0.8 and self.is_player_facing(role="attacker", del_angle=2.0):
+            rewards += 2.0
+            done = True
+            
+            in_tackle_range = True
+
+        elif self.dist_between_players() <= 1.6 and self.is_player_facing(role="attacker", del_angle=5.0):
+            rewards += 1.0
             done = True
 
-        if (self.dist_between_players() < self.last_dist_players
-            and self.is_player_facing(role="attacker")):
+            if (abs(self.defender_pos.theta - self.last_defender_dir) <= 90.0):
+                rewards += 0.1
+
+        # if the player chases the opponent directly
+        # it will obtain the max rewards
+        if abs(self.robot_pos.x - self.defender_pos.x) <= 3.2 and self.chasing_score() >= 0.97:
+            rewards += 2.0
+            
+        elif abs(self.robot_pos.x - self.defender_pos.x) <= 3.2 and self.chasing_score() >= 0.95:
             rewards += 0.5
 
-        elif self.is_player_facing(role="attacker"):
-            rewards += 0.05
-
-        # if self.chasing_attackers():
-        #     rewards += 0.2
-        #     self.last_x_dist = self.robot_pos.x - self.defender_pos.x
-        #     self.last_y_dist = self.robot_pos.y - self.defender_pos.y
+        if self.count_steps >= 20 and not in_tackle_range:
+            if rewards > 0:
+                rewards *= 0.5
+            else:
+                rewards -= 3.0
+                
 
         step_info = Info()
-        step_info.states = [self.defender_pos.x, self.defender_pos.y]
+        step_info.states = [self.defender_pos.x, self.defender_pos.y, self.defender_pos.theta]
         step_info.rewards = rewards
         step_info.done = done
         self.last_dist_players = self.dist_between_players()
+        self.last_attacker_pos = self.robot_pos
+        self.last_defender_pos = self.defender_pos
+        self.count_steps += 1
+        self.last_defender_dir = self.defender_pos.theta
 
         self.defender_pub.publish(step_info)
 
-    def is_player_facing(self, role):
+    def angle_between(self):
         """
-        Is player facing another one
+        Angle between players.
+        """
+        
+        return math.degrees(math.atan2(self.robot_pos.y - self.defender_pos.y,
+                                       self.robot_pos.x - self.defender_pos.x))
+
+    def is_player_facing(self, role, del_angle):
+        """
+        Is player facing the target (compare angles).
         """
 
         # check if defender can "see" attacker
-        angle_between_players = math.degrees(math.atan2(self.robot_pos.y - self.defender_pos.y,
-                                                            self.robot_pos.x - self.defender_pos.x))
+        angle_between_players = self.angle_between()
         def_facing = math.degrees(self.defender_pos.theta)
         attacker_facing = math.degrees(self.robot_pos.theta)
 
@@ -132,14 +169,14 @@ class Defender(Node):
                 def_facing = -(360 - def_facing)
                 
             angle_diff = abs(def_facing - angle_between_players)
-            return (angle_diff <= 10.0)
+            return (angle_diff <= del_angle)
             
         # check if the attacker is running into the defender
         if attacker_facing > 180.0:
             attacker_facing = -(360 - attacker_facing)
                 
         angle_diff = abs(attacker_facing - angle_between_players)
-        return (angle_diff <= 10.0)
+        return (angle_diff <= del_angle)
 
     def dist_between_players(self):
         """
@@ -148,16 +185,6 @@ class Defender(Node):
         
         return math.sqrt((self.robot_pos.x - self.defender_pos.x)**2
                 + (self.robot_pos.y - self.defender_pos.y)**2)
-        
-    def chasing_attackers(self):
-        """
-        Check whether both x and y distance is decreasing 
-        between attackers and defenders.
-        """
-        curr_x = self.robot_pos.x - self.defender_pos.x
-        curr_y = self.robot_pos.y - self.defender_pos.y
-        
-        return (curr_x < self.last_x_dist and curr_y < self.last_y_dist)
 
     def is_scored(self):
         """
@@ -205,12 +232,32 @@ class Defender(Node):
     def is_out_of_range(self):
         """
         Determine if the defender is out of field.
-        """
         
+        Note: the episode will end if the defender run pass the attacker.
+        """
+
         return (self.defender_pos.x <= -self.arena_range_x-0.2 or
                 self.defender_pos.x >= self.arena_range_x+0.2 or
                 self.defender_pos.y <= -self.arena_range_y-0.2 or
                 self.defender_pos.y >= self.arena_range_y+0.2)
+
+    def chasing_score(self):
+        """
+        Check how much does the player advance in the direction of the opponent.
+        
+        Calculate the dot product between the vector from the player to the opponent,
+        and the vector from its last to current position; then assign rewards proportional
+        to the dot product
+        """
+        vect_to_opponent = np.array([self.robot_pos.x - self.defender_pos.x, 
+                                     self.robot_pos.y - self.defender_pos.y])
+
+        vect_to_curr = np.array([self.defender_pos.x - self.last_defender_pos.x,
+                                 self.defender_pos.y - self.last_defender_pos.y])
+        dot_product = np.dot(vect_to_curr, vect_to_opponent)
+
+        return dot_product / (np.linalg.norm(vect_to_curr)*np.linalg.norm(vect_to_opponent))
+
 
 def main(args=None):
     rclpy.init(args=args)
