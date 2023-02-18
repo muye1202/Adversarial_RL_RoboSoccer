@@ -26,9 +26,9 @@ class one_one_field(Node):
     def __init__(self):
         super().__init__("one_one")
         
-        self.pub_marker = self.create_publisher(MarkerArray, "~/visualization_marker_array", 1)
+        self.pub_marker = self.create_publisher(MarkerArray, "~/visualization_marker_array", 10)
         self.kick_sub = self.create_subscription(Point, "~/kick", self.kick_update, 10)
-        self.pub_ball_marker = self.create_publisher(Marker, "~/visualization_marker", 1)
+        self.pub_ball_marker = self.create_publisher(Marker, "~/visualization_marker", 10)
         
         # receive the velocity for the robot
         self.vel_sub = self.create_subscription(Pose2D, '~/player_vel', self.vel_callback, 10)
@@ -40,11 +40,8 @@ class one_one_field(Node):
         self.robot_pos_pub = self.create_publisher(Pose2D, "~/robot_pos", 10)
         self.defender_pub = self.create_publisher(Pose2D, "~/defender_pos", 10)
         
-        # reset robot and ball position
-        self.reset_srv = self.create_service(Empty, '~/reset', self.reset_callback)
-        
         # see if reset flag has been sent
-        self.reset_sub = self.create_subscription(Empty_msg, "~/reset_flag", self.reset_pos_callback, 10)
+        self.reset_sub = self.create_subscription(Pose2D, "~/reset_flag", self.reset_pos_callback, 10)
         
         # see if commands have been sent by simulator
         self.state_sub = self.create_subscription(Empty_msg, "~/update", self.state_sub_callback, 10)
@@ -61,7 +58,7 @@ class one_one_field(Node):
         self.marker_arr = MarkerArray()
         self.marker_generate()
         self.broadcaster = TransformBroadcaster(self)
-        
+
         # ATTACKER action param
         self.startx = 0.
         self.starty = 0.
@@ -72,7 +69,7 @@ class one_one_field(Node):
         self.vely = 0.
         self.dash_speed = 0.
         self.dash_dir = 0.
-        self.PLAYER_MAX_SPEED = 1
+        self.PLAYER_MAX_SPEED = 1.0
         self.quaternion = Quaternion()
         
         # DEFENDER action param
@@ -124,16 +121,16 @@ class one_one_field(Node):
         ###### SET TO TRUE WHEN EVALUATING MODEL ######
         self.evaluate = False
     
-    def reset_pos_callback(self, _):
+    def reset_pos_callback(self, new_pos: Pose2D):
         """
         Reset robot position and ball position upon receiving
         the reset signal.
         """
-        self.posx = -2.0
-        self.posy = np.random.uniform(low=-0.5, high=0.5)
+        self.posx = new_pos.x
+        self.posy = new_pos.y
         self.ball_posx = self.posx + 0.2
         self.ball_posy = self.posy
-        
+
         self.def_time = py_time.time()
         self.refresh_time = py_time.time()
         
@@ -168,15 +165,6 @@ class one_one_field(Node):
     def state_sub_callback(self, _):
         
         self.update_step = True
-    
-    def reset_callback(self, _, resp):
-        """Reset robot and ball positions"""
-        self.posx = self.startx
-        self.posy = self.starty
-        self.ball_posx = self.ball_startx
-        self.ball_posy = self.ball_starty
-        
-        return resp
     
     def vel_callback(self, pose: Pose2D):
         """
@@ -255,7 +243,7 @@ class one_one_field(Node):
         marker_shape.frame_locked = False
 
         marker_shape.pose.position.x = 0.
-        marker_shape.pose.position.y = -0.5*arena_size
+        marker_shape.pose.position.y = arena_size
         marker_shape.pose.position.z = z_pos
 
         self.marker_arr.markers.append(marker_shape)
@@ -276,7 +264,7 @@ class one_one_field(Node):
         marker_shape.frame_locked = False
 
         marker_shape.pose.position.x = 0.
-        marker_shape.pose.position.y = 0.5*arena_size
+        marker_shape.pose.position.y = -arena_size
         marker_shape.pose.position.z = z_pos
 
         self.marker_arr.markers.append(marker_shape)
@@ -293,7 +281,7 @@ class one_one_field(Node):
         marker_shape.color.b = 1.
         marker_shape.color.a = 1.0
         marker_shape.scale.x = 0.2
-        marker_shape.scale.y = arena_size
+        marker_shape.scale.y = 2.0*arena_size
         marker_shape.scale.z = 0.5
         marker_shape.frame_locked = False
 
@@ -315,12 +303,12 @@ class one_one_field(Node):
         marker_shape.color.b = 1.
         marker_shape.color.a = 1.0
         marker_shape.scale.x = 0.2
-        marker_shape.scale.y = 0.2*arena_size
+        marker_shape.scale.y = 0.7*arena_size
         marker_shape.scale.z = 0.5
         marker_shape.frame_locked = False
 
         marker_shape.pose.position.x = arena_size
-        marker_shape.pose.position.y = 0.4*arena_size
+        marker_shape.pose.position.y = 0.7*arena_size
         marker_shape.pose.position.z = z_pos
 
         self.marker_arr.markers.append(marker_shape)
@@ -337,12 +325,12 @@ class one_one_field(Node):
         marker_shape.color.b = 1.
         marker_shape.color.a = 1.0
         marker_shape.scale.x = 0.2
-        marker_shape.scale.y = 0.2*arena_size
+        marker_shape.scale.y = 0.7*arena_size
         marker_shape.scale.z = 0.5
         marker_shape.frame_locked = False
 
         marker_shape.pose.position.x = arena_size
-        marker_shape.pose.position.y = -0.4*arena_size
+        marker_shape.pose.position.y = -0.7*arena_size
         marker_shape.pose.position.z = z_pos
 
         self.marker_arr.markers.append(marker_shape)

@@ -1,24 +1,8 @@
 import tensorflow as tf
 from keras import layers
-from keras import activations
 import numpy as np
 
-"""
-We use [OpenAIGym](http://gym.openai.com/docs) to create the environment.
-We will use the `upper_bound` parameter to scale our actions later.
-"""
-num_states = 2
-print("Size of State Space ->  {}".format(num_states))
 num_actions = 2
-print("Size of Action Space ->  {}".format(num_actions))
-
-"""
-To implement better exploration by the Actor network, we use noisy perturbations,
-specifically
-an **Ornstein-Uhlenbeck process** for generating noise, as described in the paper.
-It samples noise from a correlated normal distribution.
-"""
-
 
 class OUActionNoise:
     def __init__(self, mean, std_deviation, theta=0.15, dt=1e-2, x_initial=None):
@@ -169,13 +153,15 @@ class Buffer():
                     gamma)
 
 class DDPG_robo():
-    def __init__(self, first_low, first_high, sec_low, sec_high, num_states, flag: str):
+    def __init__(self, first_low=0.0, first_high=0.0, 
+                 sec_low=0.0, sec_high=0.0, 
+                 num_states=2.0, flag=""):
         """
         DDPG network for robot soccer.
         """
         # Learning rate for actor-critic models
-        critic_lr = 0.001
-        actor_lr = 0.001
+        critic_lr = 0.0001
+        actor_lr = 0.0001
 
         self.num_states = num_states
         self.flag = flag
@@ -203,26 +189,33 @@ class DDPG_robo():
         for (a, b) in zip(self.target_critic.variables, self.critic_model.variables):
             a.assign(b * tau + a * (1 - tau))
 
-    """
-    Here we define the Actor and Critic networks. These are basic Dense models
-    with `ReLU` activation.
-    Note: We need the initialization for last layer of the Actor to be between
-    `-0.003` and `0.003` as this prevents us from getting `1` or `-1` output values in
-    the initial stages, which would squash our gradients to zero,
-    as we use the `tanh` activation.
-    """
     def get_actor(self, flag):
+        """
+        Note: We need the initialization for last layer of the Actor to be between
+        `-0.003` and `0.003` as this prevents us from getting `1` or `-1` output values in
+        the initial stages, which would squash our gradients to zero,
+        as we use the `tanh` activation.
+        """
         # Initialize weights between -3e-3 and 3-e3
         last_init = tf.random_uniform_initializer(minval=-0.003, maxval=0.003)
 
-        inputs = layers.Input(shape=(self.num_states))
-        out = layers.Dense(256, activation="relu", use_bias=True)(inputs)
-        out = layers.Dense(256, activation="relu", use_bias=True)(out)
-        outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=last_init)(out)
-
+        # attacker is trained with 2 layered NN
         if flag == "predict":
+            inputs = layers.Input(shape=(self.num_states))
+            out = layers.Dense(256, activation="relu", use_bias=True)(inputs)
+            out = layers.Dense(256, activation="tanh", use_bias=True)(out)
+            outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=last_init)(out)
+
             max_num = np.array([self.first_low, self.first_high, self.sec_low, self.sec_low])
             outputs = outputs * np.amax(max_num)
+        
+        elif flag == "defender" or flag == "defender_predict":
+            inputs = layers.Input(shape=(self.num_states))
+            out = layers.Dense(256, activation="leaky_relu", use_bias=True)(inputs)
+            out = layers.Dense(256, activation="leaky_relu", use_bias=True)(out)
+            out = layers.Dense(256, activation="tanh", use_bias=True)(out)
+            out = layers.Dense(256, activation="tanh", use_bias=True)(out)
+            outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=last_init)(out)
 
         model = tf.keras.Model(inputs, outputs)
         return model
@@ -230,19 +223,21 @@ class DDPG_robo():
     def get_critic(self):
         # State as input
         state_input = layers.Input(shape=(self.num_states))
-        state_out = layers.Dense(16, activation="relu", use_bias=True)(state_input)
+        state_out = layers.Dense(16, activation="leaky_relu", use_bias=True)(state_input)
+        state_out = layers.Dense(32, activation="leaky_relu", use_bias=True)(state_out)
         state_out = layers.Dense(32, activation="relu", use_bias=True)(state_out)
 
         # Action as input
         action_input = layers.Input(shape=(num_actions))
-        action_out = layers.Dense(32, activation="relu", use_bias=True)(action_input)
+        action_out = layers.Dense(32, activation="leaky_relu", use_bias=True)(action_input)
+        action_out = layers.Dense(32, activation="leaky_relu", use_bias=True)(action_input)
         action_out = layers.Dense(32, activation="tanh", use_bias=True)(action_input)
 
         # Both are passed through seperate layer before concatenating
         concat = layers.Concatenate(axis=1)([state_out, action_out])
 
         out = layers.Dense(256, activation="relu", use_bias=True)(concat)
-        out = layers.Dense(256, activation="relu", use_bias=True)(out)
+        out = layers.Dense(256, activation="tanh", use_bias=True)(out)
         outputs = layers.Dense(1)(out)
 
         # Outputs single value for give state-action

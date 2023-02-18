@@ -35,10 +35,7 @@ class Defender_Evaluate(Node):
         self.ball_sub = self.create_subscription(Point, "one_one/ball_pos", self.ball_callback, 10)
         self.robot_sub = self.create_subscription(Pose2D, "one_one/robot_pos", self.robot_callback, 10)
         self.defender_sub = self.create_subscription(Pose2D, "one_one/defender_pos", self.defender_callback, 10)
-        
-        # publish reset command to the simulator
-        self.reset_pub = self.create_publisher(Empty, "one_one/reset_flag", 10)
-        
+
         # send kick cmd
         self.kick_pub = self.create_publisher(Point, "one_one/kick", 10)
         
@@ -48,7 +45,7 @@ class Defender_Evaluate(Node):
         self.defender_vel_pub = self.create_publisher(Pose2D, "one_one/defender_vel", 10)
         
         # publish reset command to the simulator
-        self.reset_pub = self.create_publisher(Empty, "one_one/reset_flag", 10)
+        self.reset_pub = self.create_publisher(Pose2D, "one_one/reset_flag", 10)
         
         # field params
         self.ball_pos = Point()
@@ -59,12 +56,13 @@ class Defender_Evaluate(Node):
         self.arena_range_x = 3.5
         self.arena_range_y = self.arena_range_x/2
         self.defender_pos = Pose2D()
+        self.new_pos = Pose2D()
 
         # load model
-        self.actor_model = DDPG_robo(0., 0., 0., 0.)
-        self.actor_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/newtest_actor.h5")
-        self.defender_model = DDPG_robo(0.,0.,0.,0.)
-        self.defender_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_actor.h5")
+        self.actor_model = DDPG_robo(0., 0., 0., 0., num_states=2, flag="predict")
+        self.actor_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_attacker/attacker_actor.h5")
+        self.defender_model = DDPG_robo(0.,0.,0.,0., num_states=7, flag="defender_predict")
+        self.defender_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_actor_4000.h5")
         
     def defender_callback(self, def_pos: Pose2D):
         self.defender_pos = def_pos
@@ -115,8 +113,9 @@ class Defender_Evaluate(Node):
         Send the reset signal to simulator to reset the position
         of the robot and the ball.
         """
-        
-        self.reset_pub.publish(Empty())
+        self.new_pos.x = -2.0
+        self.new_pos.y = np.random.uniform(low=-3.0, high=3.0)
+        self.reset_pub.publish(self.new_pos)
         
     def is_scored(self):
         """
@@ -143,19 +142,6 @@ class Defender_Evaluate(Node):
             self.reset_signal()
         
         else:
-            ######### SEND DEFENDER COMMANDS #########
-            defender_pos = np.array([self.defender_pos.x, self.defender_pos.y])
-            def_state = tf.expand_dims(tf.convert_to_tensor(defender_pos), 0)
-            defender_action = self.defender_model.actor_model.predict(def_state)
-            outputs = defender_action[0] * 100.0
-            outputs[0] = tf.clip_by_value(outputs[0], 50., 100.)   # kick power
-            outputs[1] = tf.clip_by_value(outputs[1], -100., 100.) # kick direction
-            
-            defender_dash = Pose2D()
-            defender_dash.x = float(outputs[0])
-            defender_dash.y = float(outputs[1])
-            self.defender_vel_pub.publish(defender_dash)
-            
             ######### SEND ATTACKER COMMANDS #########
             ball_pos = np.array([self.ball_pos.x, self.ball_pos.y])
             tf_prev_state = tf.expand_dims(tf.convert_to_tensor(ball_pos), 0)
@@ -175,6 +161,23 @@ class Defender_Evaluate(Node):
                 self.robo_state = State.IDLE
             
             self.follow_ball(self.ball_pos)
+
+            ######### SEND DEFENDER COMMANDS #########
+            dist_to_ball = math.sqrt((self.defender_pos.x-self.ball_pos.x)**2 + (self.defender_pos.y-self.ball_pos.y)**2)
+            angle = math.degrees(math.atan2(self.robot_pos.y - self.defender_pos.y,
+                                            self.robot_pos.x - self.defender_pos.x))
+            defender_pos = np.array([self.defender_pos.x, self.defender_pos.y, self.defender_pos.theta])
+            defender_input = np.concatenate((defender_pos, np.array([dist_to_ball, angle, self.ball_pos.x, self.ball_pos.y])))
+            def_state = tf.expand_dims(tf.convert_to_tensor(defender_input), 0)
+            defender_action = self.defender_model.actor_model.predict(def_state)
+            outputs = defender_action[0] * 100.0
+            outputs[0] = tf.clip_by_value(outputs[0], 50., 100.)   # kick power
+            outputs[1] = tf.clip_by_value(outputs[1], -100., 100.) # kick direction
+            
+            defender_dash = Pose2D()
+            defender_dash.x = float(outputs[0])
+            defender_dash.y = float(outputs[1])
+            self.defender_vel_pub.publish(defender_dash)
         
         
 def main(args=None):

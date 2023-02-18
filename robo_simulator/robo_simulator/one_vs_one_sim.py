@@ -11,6 +11,7 @@ import tensorflow as tf
 from rl.ddpg_robo_soccer import OUActionNoise, DDPG_robo
 from rl_interfaces.msg import Info
 import matplotlib.pyplot as plt
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 
 
 std_dev = 0.05
@@ -20,7 +21,7 @@ ou_noise = OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev) * np.one
 tau = 0.002
 gamma = 0.99
 
-total_episodes = 1500
+total_episodes = 2000
 
 """
 Attacker network
@@ -35,7 +36,7 @@ Attacker network
 """
 Defender network
 """
-defender_ddpg = DDPG_robo(first_low=20., first_high=50., sec_low=-100, sec_high=100, num_states=3, flag="")
+defender_ddpg = DDPG_robo(first_low=20., first_high=50., sec_low=-100, sec_high=100, num_states=7, flag="defender")
 defender_ep_rewards = []
 defender_avg_rewards = []
 
@@ -58,8 +59,9 @@ class one_one_simulator(Node):
     def __init__(self):
         super().__init__("one_vs_one")
 
+        self.cb_group = MutuallyExclusiveCallbackGroup()
         timer_period = 0.002
-        self.timer = self.create_timer(timer_period, self.timer_callback)
+        self.timer = self.create_timer(timer_period, self.timer_callback, callback_group=self.cb_group)
         self.start_training = True
 
         # send kick cmd
@@ -82,7 +84,7 @@ class one_one_simulator(Node):
         self.defender_rewards_sub = self.create_subscription(Info, "defend/defender_info", self.defender_step_callback, 1)
         
         # publish reset command to the simulator
-        self.reset_pub = self.create_publisher(Empty, "one_one/reset_flag", 10)
+        self.reset_pub = self.create_publisher(Pose2D, "one_one/reset_flag", 10)
         
         # field params
         self.ball_pos = Point()
@@ -100,7 +102,7 @@ class one_one_simulator(Node):
         self.action_list = []
         
         # DEFENDER params
-        self.defender_prev_state = np.array([2.0, 0.0, 0.0])
+        self.defender_prev_state = np.array([2.0, 0.0, 0.0, 2.0, 0.0, 0.2, 0.0])
         self.defender_ep_rewards = 0.0
         self.defender_pos = Pose2D()
         self.defender_info = None
@@ -111,10 +113,12 @@ class one_one_simulator(Node):
         self.defender_prev_pos = np.array([2.0, 0.0, 0.0])   # [x, y, theta]
         self.arena_range_x = 3.5
         self.arena_range_y = self.arena_range_x/2
+        self.flag = False
+        self.new_pos = Pose2D()
         
         # training log
-        self.train_log = open("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/train_log/rewards_log.txt", "a")
-        self.defender_action_log = open("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/train_log/defender_action_log.txt", "a")
+        # self.train_log = open("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/train_log/rewards_log.txt", "a")
+        # self.defender_action_log = open("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/train_log/defender_action_log.txt", "a")
         
         # load attacker model
         self.actor_model = DDPG_robo(0., 0., 0., 0., num_states=2, flag="predict")
@@ -176,8 +180,9 @@ class one_one_simulator(Node):
         Send the reset signal to simulator to reset the position
         of the robot and the ball.
         """
-        
-        self.reset_pub.publish(Empty())
+        self.new_pos.x = -2.0
+        self.new_pos.y = np.random.uniform(low=-3.0, high=3.0)
+        self.reset_pub.publish(self.new_pos)
 
     def is_scored(self):
         """
@@ -201,30 +206,60 @@ class one_one_simulator(Node):
     def timer_callback(self):
         if self.ep <= total_episodes:
             if not self.done_episode:
+                self.flag = True
+                ####### ATTACKER TRAINING LOOP ######
+                #####################################
+                ######## SENDING THE COMMANDS #######
+                # if self.is_dead_ball() or self.is_scored():
+                #     self.done_episode = True
+                #     self.reset_signal() 
+
+                # else:
+                ball_pos = np.array([self.ball_pos.x, self.ball_pos.y])
+                tf_prev_state = tf.expand_dims(tf.convert_to_tensor(ball_pos), 0)
+                action = self.actor_model.actor_model.predict(tf_prev_state, verbose=0)
+                outputs = action[0] * kickdir_high
+                outputs[0] = tf.clip_by_value(outputs[0], kickpow_lower_bound, kickpow_upper_bound)   # kick power
+                outputs[1] = tf.clip_by_value(outputs[1], kickdir_low, kickdir_high) # kick direction
+
+                if self.player_to_ball_dist() <= 0.1:
+                    self.robo_state = State.BALL_KICKABLE
+
+                if self.robo_state == State.BALL_KICKABLE:
+                    kick_dir = outputs[1]
+                    kick_pow = outputs[0]
+                    self.kick(kick_pow, kick_dir)
+
+                    self.attacker_update_pub.publish(Empty())
+                    self.robo_state = State.IDLE
+
+                self.follow_ball(self.ball_pos)
+
                 ###### DEFENDER TRAINING LOOP #######
                 #####################################
                 # sample actions from the network
+                # for defender, take ball pos into input
                 defender_prev_state = tf.expand_dims(tf.convert_to_tensor(self.defender_prev_state), 0)
                 defender_action = defender_ddpg.policy(defender_prev_state, noise_object=ou_noise)
-                
                 dash_speed = defender_action[0]
                 dash_dir = defender_action[1]
                 
-                self.get_logger().info("speed: " + str(dash_speed) + " direction: " + str(dash_dir))
-                self.defender_action_log.write("Episode * {} * DEFENDER action [speed, dir] ==> {} \n".format(self.ep, dash_speed, dash_dir))
-                
+                # self.get_logger().info("speed: " + str(dash_speed) + " direction: " + str(dash_dir))
+                # self.defender_action_log.write("Episode * {} * DEFENDER action [speed, dir] ==> {} \n".format(self.ep, dash_speed, dash_dir))
+
                 self.defender_dash(dash_speed, dash_dir)
                 self.defender_state_pub.publish(Empty())
                 if self.defender_recv_update:
                     state_list = self.defender_info.states
-                    state = np.array([state_list[0], state_list[1], state_list[2]])
+                    state = np.array([state_list[0], state_list[1], state_list[2], state_list[3], state_list[4],
+                                      self.ball_pos.x, self.ball_pos.y])
                     def_reward = self.defender_info.rewards
                     def_done = self.defender_info.done
 
+                    # normalize the states input
                     normal_state = state
                     normal_pre_state = self.defender_prev_state
 
-                    # normalize input
                     if np.linalg.norm(state) > 0 and np.linalg.norm(self.defender_prev_state) > 0:
                         normal_state = state / np.linalg.norm(state)
                         normal_pre_state = self.defender_prev_state / np.linalg.norm(self.defender_prev_state)
@@ -247,39 +282,19 @@ class one_one_simulator(Node):
                     self.defender_prev_pos = state
                     self.defender_recv_update = False
 
-                ####### ATTACKER TRAINING LOOP ######
-                #####################################
-                ######## SENDING THE COMMANDS #######
-                if self.is_dead_ball() or self.is_scored():
-                    self.done_episode = True
-                    self.reset_signal() 
-
-                else:
-                    ball_pos = np.array([self.ball_pos.x, self.ball_pos.y])
-                    tf_prev_state = tf.expand_dims(tf.convert_to_tensor(ball_pos), 0)
-                    action = self.actor_model.actor_model.predict(tf_prev_state, verbose=0)
-                    outputs = action[0] * kickdir_high
-                    outputs[0] = tf.clip_by_value(outputs[0], kickpow_lower_bound, kickpow_upper_bound)   # kick power
-                    outputs[1] = tf.clip_by_value(outputs[1], kickdir_low, kickdir_high) # kick direction
-
-                    if self.player_to_ball_dist() <= 0.1:
-                        self.robo_state = State.BALL_KICKABLE
-
-                    if self.robo_state == State.BALL_KICKABLE:
-                        kick_dir = outputs[1]
-                        kick_pow = outputs[0]
-                        self.kick(kick_pow, kick_dir)
-
-                        self.attacker_update_pub.publish(Empty())
-                        self.robo_state = State.IDLE
-
-                    self.follow_ball(self.ball_pos)
                     defender_ep_rewards.append(self.defender_episodic_rewards)
 
-            elif self.done_episode:
+            elif self.done_episode and self.flag:
+                self.flag = False
                 self.ep += 1
-                self.prev_state = np.array([0.2, 0.])
-                self.defender_prev_state = np.array([2., 0., 0.0])
+                
+                # reset the state input of the defender
+                dist_to_ball = math.sqrt((self.new_pos.x -2.0)**2 + (self.new_pos.y)**2)
+                angle = math.degrees(math.atan2(self.new_pos.y - 0.0,
+                                                self.new_pos.x - 2.0))
+                self.defender_prev_state = np.array([2., 0., 0.0, dist_to_ball, angle,
+                                                     self.new_pos.x+0.2, self.new_pos.y])
+
                 self.episodic_reward = 0
                 self.defender_episodic_rewards = 0
                 self.done_episode = False
@@ -287,13 +302,13 @@ class one_one_simulator(Node):
                 def_avg_reward = np.mean(defender_ep_rewards[-40:])
                 
                 # training log
-                self.train_log.write("Episode * {} * DEFENDER Avg Reward is ==> {} \n".format(self.ep, def_avg_reward))
+                # self.train_log.write("Episode * {} * DEFENDER Avg Reward is ==> {} \n".format(self.ep, def_avg_reward))
                 self.get_logger().info("Episode * {} * DEFENDER Avg Reward is ==> {}".format(self.ep, def_avg_reward))
                 defender_avg_rewards.append(def_avg_reward)
 
                 # save the weights every 1000 episodes:
                 if self.ep % 1000 == 0:
-                   defender_ddpg.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_1500_actor.h5")
+                   defender_ddpg.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_actor_2000.h5")
                 #    defender_ddpg.critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_8000_critic.h5")
 
                 #    defender_ddpg.target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_8000_target_actor.h5")
@@ -307,7 +322,7 @@ class one_one_simulator(Node):
             plt.ylabel("Avg. Epsiodic Reward")
             plt.show()
             
-            defender_ddpg.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_1500_actor.h5")
+            defender_ddpg.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_actor_2000.h5")
             # defender_ddpg.critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_8000_critic.h5")
 
             # defender_ddpg.target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_8000_target_actor.h5")
