@@ -155,13 +155,13 @@ class Buffer():
 class DDPG_robo():
     def __init__(self, first_low=0.0, first_high=0.0, 
                  sec_low=0.0, sec_high=0.0, 
-                 num_states=2.0, flag=""):
+                 num_states=2.0, flag="", checkpt=False):
         """
         DDPG network for robot soccer.
         """
         # Learning rate for actor-critic models
-        critic_lr = 0.0001
-        actor_lr = 0.0001
+        critic_lr = 0.0002
+        actor_lr = 0.0002
 
         self.num_states = num_states
         self.flag = flag
@@ -171,9 +171,9 @@ class DDPG_robo():
         self.sec_high = sec_high
         self.critic_optimizer = tf.keras.optimizers.Adam(critic_lr, clipnorm=0.6)
         self.actor_optimizer = tf.keras.optimizers.Adam(actor_lr, clipnorm=0.6)
-        self.actor_model = self.get_actor(self.flag)
+        self.actor_model = self.get_actor(self.flag, checkpt)   # is this training continuing on last checkpoint    
         self.critic_model = self.get_critic()
-        self.target_actor = self.get_actor(self.flag)
+        self.target_actor = self.get_actor(self.flag, checkpt)
         self.target_critic = self.get_critic()
         self.buffer = Buffer(num_states=num_states)
 
@@ -189,7 +189,7 @@ class DDPG_robo():
         for (a, b) in zip(self.target_critic.variables, self.critic_model.variables):
             a.assign(b * tau + a * (1 - tau))
 
-    def get_actor(self, flag):
+    def get_actor(self, flag, checkpt):
         """
         Note: We need the initialization for last layer of the Actor to be between
         `-0.003` and `0.003` as this prevents us from getting `1` or `-1` output values in
@@ -197,9 +197,10 @@ class DDPG_robo():
         as we use the `tanh` activation.
         """
         # Initialize weights between -3e-3 and 3-e3
-        last_init = tf.random_uniform_initializer(minval=-0.003, maxval=0.003)
+        if not checkpt:
+            last_init = tf.random_uniform_initializer(minval=-0.003, maxval=0.003)
 
-        # attacker is trained with 2 layered NN
+        # attacker is trained with 3 layered NN
         if flag == "predict":
             inputs = layers.Input(shape=(self.num_states))
             out = layers.Dense(256, activation="relu", use_bias=True)(inputs)
@@ -208,11 +209,13 @@ class DDPG_robo():
 
             max_num = np.array([self.first_low, self.first_high, self.sec_low, self.sec_low])
             outputs = outputs * np.amax(max_num)
-        
+
         elif flag == "defender" or flag == "defender_predict":
+            leaky_relu = layers.LeakyReLU(alpha=0.3)
             inputs = layers.Input(shape=(self.num_states))
-            out = layers.Dense(256, activation="leaky_relu", use_bias=True)(inputs)
-            out = layers.Dense(256, activation="leaky_relu", use_bias=True)(out)
+            out = layers.Dense(256, activation=leaky_relu, use_bias=True)(inputs)
+            out = layers.Dense(256, activation=leaky_relu, use_bias=True)(out)
+            out = layers.Dense(256, activation=leaky_relu, use_bias=True)(out)
             out = layers.Dense(256, activation="tanh", use_bias=True)(out)
             out = layers.Dense(256, activation="tanh", use_bias=True)(out)
             outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=last_init)(out)
@@ -221,22 +224,23 @@ class DDPG_robo():
         return model
 
     def get_critic(self):
+        leaky_relu = layers.LeakyReLU(alpha=0.3)
         # State as input
         state_input = layers.Input(shape=(self.num_states))
-        state_out = layers.Dense(16, activation="leaky_relu", use_bias=True)(state_input)
-        state_out = layers.Dense(32, activation="leaky_relu", use_bias=True)(state_out)
+        state_out = layers.Dense(16, activation=leaky_relu, use_bias=True)(state_input)
+        state_out = layers.Dense(32, activation=leaky_relu, use_bias=True)(state_out)
         state_out = layers.Dense(32, activation="relu", use_bias=True)(state_out)
 
         # Action as input
         action_input = layers.Input(shape=(num_actions))
-        action_out = layers.Dense(32, activation="leaky_relu", use_bias=True)(action_input)
-        action_out = layers.Dense(32, activation="leaky_relu", use_bias=True)(action_input)
+        action_out = layers.Dense(32, activation=leaky_relu, use_bias=True)(action_input)
+        action_out = layers.Dense(32, activation=leaky_relu, use_bias=True)(action_input)
         action_out = layers.Dense(32, activation="tanh", use_bias=True)(action_input)
 
         # Both are passed through seperate layer before concatenating
         concat = layers.Concatenate(axis=1)([state_out, action_out])
-
-        out = layers.Dense(256, activation="relu", use_bias=True)(concat)
+        out = layers.Dense(256, activation=leaky_relu, use_bias=True)(concat)
+        out = layers.Dense(256, activation=leaky_relu, use_bias=True)(concat)
         out = layers.Dense(256, activation="tanh", use_bias=True)(out)
         outputs = layers.Dense(1)(out)
 
@@ -252,7 +256,7 @@ class DDPG_robo():
         sampled_actions = tf.squeeze(self.actor_model(state))
         # reshape the sampled actions
         sampled_actions = tf.reshape(sampled_actions, [1,2])
-        
+
         if noise_object is not None:
             noise = noise_object()
         else:

@@ -21,7 +21,7 @@ ou_noise = OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev) * np.one
 tau = 0.002
 gamma = 0.99
 
-total_episodes = 2000
+total_episodes = 4000
 
 """
 Attacker network
@@ -36,7 +36,11 @@ Attacker network
 """
 Defender network
 """
-defender_ddpg = DDPG_robo(first_low=20., first_high=50., sec_low=-100, sec_high=100, num_states=7, flag="defender")
+defender_ddpg = DDPG_robo(first_low=40., first_high=70., sec_low=-100, sec_high=100, num_states=8, flag="defender")
+# defender_ddpg.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_actor_4000.h5")
+# defender_ddpg.critic_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_critic_checkpoint.h5")
+# defender_ddpg.target_actor.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_target_actor_checkpoint.h5")
+# defender_ddpg.target_critic.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_target_critic_checkpoint.h5")
 defender_ep_rewards = []
 defender_avg_rewards = []
 
@@ -102,7 +106,7 @@ class one_one_simulator(Node):
         self.action_list = []
         
         # DEFENDER params
-        self.defender_prev_state = np.array([2.0, 0.0, 0.0, 2.0, 0.0, 0.2, 0.0])
+        self.defender_prev_state = np.array([2.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.2, 0.0])
         self.defender_ep_rewards = 0.0
         self.defender_pos = Pose2D()
         self.defender_info = None
@@ -110,9 +114,9 @@ class one_one_simulator(Node):
         self.defender_recv_update = False
         
         self.ball_prev_pos = np.array([0.2, 0.0])
-        self.defender_prev_pos = np.array([2.0, 0.0, 0.0])   # [x, y, theta]
+        self.defender_prev_pos = np.array([2.0, 0.0, 0.0, 2.0, 0.0, 0.2, 0.0])
         self.arena_range_x = 3.5
-        self.arena_range_y = self.arena_range_x/2
+        self.arena_range_y = self.arena_range_x
         self.flag = False
         self.new_pos = Pose2D()
         
@@ -203,6 +207,33 @@ class one_one_simulator(Node):
                 self.ball_pos.y <= -self.arena_range_y-0.2 or
                 self.ball_pos.y >= self.arena_range_y+0.2)
 
+    def angle_between(self):
+        """
+        Angle between players.
+        """
+        
+        return math.degrees(math.atan2(self.robot_pos.y - self.defender_pos.y,
+                                       self.robot_pos.x - self.defender_pos.x))
+
+    def player_facing(self):
+        """
+        Is player facing the target (compare angles).
+        """
+        angle_between_players = self.angle_between()
+        def_facing = math.degrees(self.defender_pos.theta)
+
+        if def_facing < 0:
+            def_facing = 180 - abs(def_facing)
+            
+        elif def_facing >= 0:
+            def_facing = 180 + def_facing
+            
+        if angle_between_players < 0:
+            angle_between_players = 360 - abs(angle_between_players)
+            
+        angle_diff = angle_between_players - def_facing
+        return angle_diff
+
     def timer_callback(self):
         if self.ep <= total_episodes:
             if not self.done_episode:
@@ -210,11 +241,6 @@ class one_one_simulator(Node):
                 ####### ATTACKER TRAINING LOOP ######
                 #####################################
                 ######## SENDING THE COMMANDS #######
-                # if self.is_dead_ball() or self.is_scored():
-                #     self.done_episode = True
-                #     self.reset_signal() 
-
-                # else:
                 ball_pos = np.array([self.ball_pos.x, self.ball_pos.y])
                 tf_prev_state = tf.expand_dims(tf.convert_to_tensor(ball_pos), 0)
                 action = self.actor_model.actor_model.predict(tf_prev_state, verbose=0)
@@ -243,16 +269,13 @@ class one_one_simulator(Node):
                 defender_action = defender_ddpg.policy(defender_prev_state, noise_object=ou_noise)
                 dash_speed = defender_action[0]
                 dash_dir = defender_action[1]
-                
-                # self.get_logger().info("speed: " + str(dash_speed) + " direction: " + str(dash_dir))
-                # self.defender_action_log.write("Episode * {} * DEFENDER action [speed, dir] ==> {} \n".format(self.ep, dash_speed, dash_dir))
 
                 self.defender_dash(dash_speed, dash_dir)
                 self.defender_state_pub.publish(Empty())
                 if self.defender_recv_update:
                     state_list = self.defender_info.states
                     state = np.array([state_list[0], state_list[1], state_list[2], state_list[3], state_list[4],
-                                      self.ball_pos.x, self.ball_pos.y])
+                                      state_list[5], self.ball_pos.x, self.ball_pos.y])
                     def_reward = self.defender_info.rewards
                     def_done = self.defender_info.done
 
@@ -289,11 +312,12 @@ class one_one_simulator(Node):
                 self.ep += 1
                 
                 # reset the state input of the defender
-                dist_to_ball = math.sqrt((self.new_pos.x -2.0)**2 + (self.new_pos.y)**2)
                 angle = math.degrees(math.atan2(self.new_pos.y - 0.0,
                                                 self.new_pos.x - 2.0))
-                self.defender_prev_state = np.array([2., 0., 0.0, dist_to_ball, angle,
-                                                     self.new_pos.x+0.2, self.new_pos.y])
+                dist_between = math.sqrt((self.new_pos.x - 2.0)**2 + (self.new_pos.y)**2)
+                self.defender_prev_state = np.array([2., 0., 0.0, dist_between, angle,
+                                                     angle, self.new_pos.x+0.2, self.new_pos.y])
+                self.defender_prev_state = self.defender_prev_state / np.linalg.norm(self.defender_prev_state)
 
                 self.episodic_reward = 0
                 self.defender_episodic_rewards = 0
@@ -307,12 +331,12 @@ class one_one_simulator(Node):
                 defender_avg_rewards.append(def_avg_reward)
 
                 # save the weights every 1000 episodes:
-                if self.ep % 1000 == 0:
-                   defender_ddpg.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_actor_2000.h5")
-                #    defender_ddpg.critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_8000_critic.h5")
+                if self.ep % 100 == 0:
+                   defender_ddpg.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_actor_checkpoint.h5")
+                   defender_ddpg.critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_critic_checkpoint.h5")
 
-                #    defender_ddpg.target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_8000_target_actor.h5")
-                #    defender_ddpg.target_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_8000_target_critic.h5")
+                   defender_ddpg.target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_target_actor_checkpoint.h5")
+                   defender_ddpg.target_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_target_critic_checkpoint.h5")
 
         else:
             # Plotting graph
@@ -322,7 +346,7 @@ class one_one_simulator(Node):
             plt.ylabel("Avg. Epsiodic Reward")
             plt.show()
             
-            defender_ddpg.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_actor_2000.h5")
+            defender_ddpg.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_actor_4000.h5")
             # defender_ddpg.critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_8000_critic.h5")
 
             # defender_ddpg.target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_8000_target_actor.h5")

@@ -11,8 +11,8 @@ import tensorflow as tf
 from rl.ddpg_robo_soccer import DDPG_robo
 
 
-kickpow_upper_bound = 50.
-kickpow_lower_bound = 20.
+kickpow_upper_bound = 70.
+kickpow_lower_bound = 40.
 kickdir_low = -90.
 kickdir_high = 90.
 
@@ -28,7 +28,7 @@ class Defender_Evaluate(Node):
     def __init__(self):
         super().__init__("defender_eval")
         
-        timer_period = 0.01
+        timer_period = 0.002
         self.timer_ = self.create_timer(timer_period, self.timer_callback)
         
         # receive ball and robot position
@@ -61,7 +61,7 @@ class Defender_Evaluate(Node):
         # load model
         self.actor_model = DDPG_robo(0., 0., 0., 0., num_states=2, flag="predict")
         self.actor_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_attacker/attacker_actor.h5")
-        self.defender_model = DDPG_robo(0.,0.,0.,0., num_states=7, flag="defender_predict")
+        self.defender_model = DDPG_robo(0.,0.,0.,0., num_states=8, flag="defender_predict")
         self.defender_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_actor_4000.h5")
         
     def defender_callback(self, def_pos: Pose2D):
@@ -103,9 +103,7 @@ class Defender_Evaluate(Node):
     def follow_ball(self, ball_pos: Point):
         # dash towards the ball
         dash_dir = self.turning_angle(ball_pos, self.robot_pos)
-        dash_pow = 80.
-        
-        #self.get_logger().info("dash direction: " + str(dash_dir))
+        dash_pow = 50.
         self.dash(dash_pow, dash_dir)
         
     def reset_signal(self):
@@ -136,9 +134,36 @@ class Defender_Evaluate(Node):
                 self.ball_pos.y <= -self.arena_range_y-0.2 or
                 self.ball_pos.y >= self.arena_range_y+0.2)
         
+    def player_facing(self, angle_between_players):
+        """
+        Is player facing the target (compare angles).
+        """
+        def_facing = math.degrees(self.defender_pos.theta)
+
+        if def_facing < 0:
+            def_facing = 180 - abs(def_facing)
+            
+        elif def_facing >= 0:
+            def_facing = 180 + def_facing
+            
+        if angle_between_players < 0:
+            angle_between_players = 360 - abs(angle_between_players)
+            
+        angle_diff = angle_between_players - def_facing
+        return angle_diff
+        
+    def dist_between_players(self):
+        """
+        Calculate distance between attacker and defender
+        """
+        
+        return math.sqrt((self.robot_pos.x - self.defender_pos.x)**2
+                + (self.robot_pos.y - self.defender_pos.y)**2)
+        
     def timer_callback(self):
         ###### SENDING THE COMMANDS ######
-        if (self.is_dead_ball() or self.is_scored()):
+        if (self.is_dead_ball() or self.is_scored()
+            or self.dist_between_players() <= 0.8):
             self.reset_signal()
         
         else:
@@ -163,16 +188,20 @@ class Defender_Evaluate(Node):
             self.follow_ball(self.ball_pos)
 
             ######### SEND DEFENDER COMMANDS #########
+            # feed in the normalized defender input
             dist_to_ball = math.sqrt((self.defender_pos.x-self.ball_pos.x)**2 + (self.defender_pos.y-self.ball_pos.y)**2)
             angle = math.degrees(math.atan2(self.robot_pos.y - self.defender_pos.y,
                                             self.robot_pos.x - self.defender_pos.x))
+            player_facing = self.player_facing(angle)
             defender_pos = np.array([self.defender_pos.x, self.defender_pos.y, self.defender_pos.theta])
-            defender_input = np.concatenate((defender_pos, np.array([dist_to_ball, angle, self.ball_pos.x, self.ball_pos.y])))
+            defender_input = np.concatenate((defender_pos, np.array([dist_to_ball, player_facing, angle, self.ball_pos.x, self.ball_pos.y])))
+            defender_input = defender_input / np.linalg.norm(defender_input)
+            
             def_state = tf.expand_dims(tf.convert_to_tensor(defender_input), 0)
             defender_action = self.defender_model.actor_model.predict(def_state)
             outputs = defender_action[0] * 100.0
-            outputs[0] = tf.clip_by_value(outputs[0], 50., 100.)   # kick power
-            outputs[1] = tf.clip_by_value(outputs[1], -100., 100.) # kick direction
+            outputs[0] = tf.clip_by_value(outputs[0], 50., 100.)   # dash power
+            outputs[1] = tf.clip_by_value(outputs[1], -100., 100.) # dash direction
             
             defender_dash = Pose2D()
             defender_dash.x = float(outputs[0])

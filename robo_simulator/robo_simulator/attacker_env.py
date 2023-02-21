@@ -67,22 +67,6 @@ class RoboPlayer(Node):
         done = False
         rewards = 0.0
         
-        # self.get_logger().info("robot position: " + str(self.robot_pos.x) + " " + str(self.robot_pos.y))
-        ### REWARDS ###
-        # For attackers:
-        #       1. For each step without scoring, reward = 0
-        #       2. Lose the control of the ball, reward = -10
-        #       3. Shooting route blocked by defender, reward = -1
-        #       4. Find a clear route to goal, reward = +5
-        #       5. Score a goal, reward is set to 10
-        #       6. The ball's distance towards the goal advances, reward = + 0.5
-        #       7. The ball is out of field, reward = -5
-        #       8. Inside shooting range to the goal, reward = + 2
-        # For defenders:
-        #       For each step without being scored, reward = +1
-        #       Taking control over the ball, reward = +10
-        #       Blocking shooting route, reward = +1
-        
         # check whether the robot moves towards
         # the goal in the past episode:
         if self.last_ball_dist - self.ball_to_goal_dist() > 0.01:    

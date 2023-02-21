@@ -388,8 +388,8 @@ class one_one_field(Node):
         
         # transform back to world coordinate
         Tw_footprint = np.array([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0., 0., 1.]])
-        Tcurr = np.array([[np.cos(-self.def_ang), -np.sin(-self.def_ang), -self.def_posx],
-                            [np.sin(-self.def_ang), np.cos(-self.def_ang), -self.def_posy],
+        Tcurr = np.array([[np.cos(self.def_ang), -np.sin(self.def_ang), -self.def_posx],
+                            [np.sin(self.def_ang), np.cos(self.def_ang), -self.def_posy],
                             [0.0, 0.0, 1.0]])
         Tback = np.linalg.inv(Tw_footprint)
         Tw = np.matmul(Tcurr, Tback)
@@ -397,7 +397,7 @@ class one_one_field(Node):
         defender_pos = Pose2D()
         defender_pos.x = Tw[0][2]
         defender_pos.y = Tw[1][2]
-        defender_pos.theta = np.arccos(Tw[0][0])
+        defender_pos.theta = self.def_ang
         self.defender_pub.publish(defender_pos)
         
         if self.defender_state_step:

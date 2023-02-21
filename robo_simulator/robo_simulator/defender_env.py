@@ -58,6 +58,7 @@ class Defender(Node):
         self.last_x_dist = 2.0   # last x dist between players
         self.last_y_dist = 0.0   # last y dist between players
         self.last_defender_dir = 0.0
+        self.last_dist_to_start = 0.0
     
     def timer_callback(self):
         if self.def_update:
@@ -77,7 +78,7 @@ class Defender(Node):
     def robot_callback(self, robo_pos: Pose2D):
         self.robot_pos = robo_pos
         
-    def player_to_ball_dist(self):
+    def attacker_to_ball_dist(self):
         
         return math.sqrt((self.ball_pos.x - self.robot_pos.x)**2 + 
                          (self.ball_pos.y - self.robot_pos.y)**2)
@@ -88,10 +89,6 @@ class Defender(Node):
 
         self.count_steps += 1
         ### DEFENDER REWARDS ###
-        # For each step without being scored, reward = +1
-        # Taking control over the ball, reward = +10
-        # Blocking shooting route, reward = +1
-
         # check whether the robot moves towards
         # the goal in the past episode:
         if self.is_scored():
@@ -100,51 +97,63 @@ class Defender(Node):
 
         # stop the defender when it runs pass the attacker
         if not self.is_scored() and self.is_out_of_range():
-            rewards = -1200.0
-            done = True
-            
-        elif self.defender_pos.x < 1.0+self.robot_pos.x:
+            rewards = -3000.0
             done = True
 
+        if self.dist_between_players() <= 0.8:
+            rewards += 500.0
 
-        if self.dist_between_players() <= 0.8 and self.player_facing() <= 15.0:
+        if (self.dist_between_players() <= 2.4 and abs(self.player_facing()) < 10.0):
             rewards += 500.0 * 15.0 / (self.player_facing() + 1)
 
-        elif self.dist_between_players() <= 1.6 and self.player_facing() <= 25.0:
-            rewards += 300 * 25.0 / self.player_facing()
-            
-        elif self.dist_between_players() <= 1.6 and self.player_facing() > 100.0:
+        elif (self.dist_between_players() <= 2.4 and abs(self.player_facing()) < 15.0):
+            rewards += -20*self.player_facing() + 600
+
+        elif (self.dist_between_players() <= 2.4 and abs(self.player_facing()) > 30.0):
             rewards -= 50.0
 
         # if the player chases the opponent directly
         # it will obtain the max rewards
         if self.count_steps == 5:
-            if abs(self.robot_pos.x - self.defender_pos.x) <= 2.0 and self.chasing_score() <= 10.0:
-                rewards += 20.0
 
-            elif abs(self.robot_pos.x - self.defender_pos.x) <= 3.2 and self.chasing_score() <= 20.0:
-                rewards += 10.0
+            if (self.dist_between_players() <= 2.4 and self.chasing_score() < 5.0):
+                if self.last_dist_to_start < self.dist_to_start():
+                    rewards += 150.0
+                else:
+                    rewards += 100.0
 
-            elif abs(self.robot_pos.x - self.defender_pos.x) <= 2.0 and self.chasing_score() > 20.0:
-                rewards -= 20.0
-                
-            if self.chasing_score() > 90.0:
-                rewards -= 100.0
+            elif (self.dist_between_players() <= 2.4 and self.chasing_score() < 7.0):
+                if self.last_dist_to_start < self.dist_to_start():
+                    rewards += 70.0
+                else:
+                    rewards += 40.0
+
+            elif (self.dist_between_players() <= 2.0 and self.chasing_score() > 15.0):
+                rewards -= 50.0
 
             self.count_steps = 0
             self.last_defender_pos = self.defender_pos
-            
+
         if self.ball_to_goal_dist() <= 2.0:
             rewards -= 500.0
 
+        # punish if the player goes over the attacker
+        # without being in range    
+        if (self.defender_pos.x < self.robot_pos.x+0.1):
+            done = True
+            if (self.dist_between_players() >= 1.5):
+                rewards -= 900.0
+
         step_info = Info()
-        dist_to_ball = math.sqrt((self.defender_pos.x - self.ball_pos.x)**2 + (self.defender_pos.y - self.ball_pos.y)**2)
-        step_info.states = [self.defender_pos.x, self.defender_pos.y, self.defender_pos.theta, dist_to_ball, self.angle_between()]
+        # dist_to_ball = math.sqrt((self.defender_pos.x - self.ball_pos.x)**2 + (self.defender_pos.y - self.ball_pos.y)**2)
+        step_info.states = [self.defender_pos.x, self.defender_pos.y, self.defender_pos.theta, 
+                            self.dist_between_players(), self.player_facing(), self.angle_between()]
         step_info.rewards = rewards
         step_info.done = done
         self.last_dist_players = self.dist_between_players()
         self.last_attacker_pos = self.robot_pos
         self.last_defender_dir = self.defender_pos.theta
+        self.last_dist_to_start = self.dist_to_start()   # distance to the other side of the field
 
         self.defender_pub.publish(step_info)
 
@@ -152,7 +161,7 @@ class Defender(Node):
         """
         Angle between players.
         """
-        
+
         return math.degrees(math.atan2(self.robot_pos.y - self.defender_pos.y,
                                        self.robot_pos.x - self.defender_pos.x))
 
@@ -160,24 +169,35 @@ class Defender(Node):
         """
         Is player facing the target (compare angles).
         """
-
-        # check if defender can "see" attacker
         angle_between_players = self.angle_between()
         def_facing = math.degrees(self.defender_pos.theta)
 
-        if def_facing > 180.0:
-            def_facing = -(360 - def_facing)
-            
-        angle_diff = abs(def_facing - angle_between_players)
+        if def_facing < 0:
+            def_facing = 180 - abs(def_facing)
+
+        elif def_facing >= 0:
+            def_facing = 180 + def_facing
+
+        if angle_between_players < 0:
+            angle_between_players = 360 - abs(angle_between_players)
+
+        angle_diff = angle_between_players - def_facing
         return angle_diff
 
     def dist_between_players(self):
         """
         Calculate distance between attacker and defender
         """
-        
+
         return math.sqrt((self.robot_pos.x - self.defender_pos.x)**2
                 + (self.robot_pos.y - self.defender_pos.y)**2)
+
+    def dist_to_start(self):
+        """
+        Measure the Euclidean dist to start pos.
+        """
+        
+        return abs(self.defender_pos.x - (-3.5))
 
     def is_scored(self):
         """
@@ -242,17 +262,17 @@ class Defender(Node):
         and the vector from its last to current position; then assign rewards proportional
         to the dot product
         """
-        vect_to_opponent = np.array([self.robot_pos.x - self.defender_pos.x,
-                                     self.robot_pos.y - self.defender_pos.y])
+        vect_to_opponent = np.array([self.robot_pos.x - 2.0,
+                                     self.robot_pos.y - 0.0])
         vect_to_opponent = vect_to_opponent / np.linalg.norm(vect_to_opponent)
 
-        vect_to_curr = np.array([self.defender_pos.x - self.last_defender_pos.x,
-                                 self.defender_pos.y - self.last_defender_pos.y])
+        vect_to_curr = np.array([self.defender_pos.x - 2.0,
+                                 self.defender_pos.y - 0.0])
         vect_to_curr = vect_to_curr / np.linalg.norm(vect_to_curr)
 
         # normalized dot product
         dot_product = np.dot(vect_to_curr, vect_to_opponent)
-        
+
         return math.degrees(np.arccos(dot_product))
 
 
