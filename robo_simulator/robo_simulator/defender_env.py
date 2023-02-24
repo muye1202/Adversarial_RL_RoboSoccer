@@ -97,55 +97,45 @@ class Defender(Node):
 
         # stop the defender when it runs pass the attacker
         if not self.is_scored() and self.is_out_of_range():
-            rewards = -3000.0
+            rewards = -1000.0
             done = True
 
         if self.dist_between_players() <= 0.8:
-            rewards += 500.0
+            rewards += 100
+            
+        if not self.is_scored() or self.ball_to_goal_dist() > 2.0:
+            rewards += 5.0
 
-        if (self.dist_between_players() <= 2.4 and abs(self.player_facing()) < 10.0):
-            rewards += 500.0 * 15.0 / (self.player_facing() + 1)
-
-        elif (self.dist_between_players() <= 2.4 and abs(self.player_facing()) < 15.0):
-            rewards += -20*self.player_facing() + 600
-
-        elif (self.dist_between_players() <= 2.4 and abs(self.player_facing()) > 30.0):
-            rewards -= 50.0
+        if abs(self.player_facing()) <= 45.0:
+            rewards += 60.0 * 45.0 / (self.player_facing() + 1)
+            
+        elif abs(self.player_facing()) > 45.0:
+            rewards -= 10
 
         # if the player chases the opponent directly
         # it will obtain the max rewards
         if self.count_steps == 5:
 
-            if (self.dist_between_players() <= 2.4 and self.chasing_score() < 5.0):
-                if self.last_dist_to_start < self.dist_to_start():
-                    rewards += 150.0
-                else:
-                    rewards += 100.0
+            if (self.chasing_score() <= 30.0):
+                rewards += 60 * 30.0 / (self.chasing_score()+1)
 
-            elif (self.dist_between_players() <= 2.4 and self.chasing_score() < 7.0):
-                if self.last_dist_to_start < self.dist_to_start():
-                    rewards += 70.0
-                else:
-                    rewards += 40.0
-
-            elif (self.dist_between_players() <= 2.0 and self.chasing_score() > 15.0):
-                rewards -= 50.0
+            elif (self.chasing_score() > 30.0):
+                rewards -= 10.0
 
             self.count_steps = 0
             self.last_defender_pos = self.defender_pos
 
         if self.ball_to_goal_dist() <= 2.0:
-            rewards -= 500.0
+            rewards -= 10.0
 
         # punish if the player goes over the attacker
         # without being in range    
         if (self.defender_pos.x < self.robot_pos.x+0.1):
             done = True
             if (self.dist_between_players() >= 1.5):
-                rewards -= 900.0
+                rewards -= 500.0
 
         step_info = Info()
-        # dist_to_ball = math.sqrt((self.defender_pos.x - self.ball_pos.x)**2 + (self.defender_pos.y - self.ball_pos.y)**2)
         step_info.states = [self.defender_pos.x, self.defender_pos.y, self.defender_pos.theta, 
                             self.dist_between_players(), self.player_facing(), self.angle_between()]
         step_info.rewards = rewards

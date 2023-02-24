@@ -64,7 +64,7 @@ class one_one_simulator(Node):
         super().__init__("one_vs_one")
 
         self.cb_group = MutuallyExclusiveCallbackGroup()
-        timer_period = 0.002
+        timer_period = 0.01
         self.timer = self.create_timer(timer_period, self.timer_callback, callback_group=self.cb_group)
         self.start_training = True
 
@@ -99,6 +99,7 @@ class one_one_simulator(Node):
         self.step_info = Info()
         self.recv_update = False   # tell rs_env if data should be analyzed
         self.ep = 0.
+        self.steps = 0
         self.done_episode = False
         self.prev_state = np.array([0., 0.])
         self.episodic_reward = 0.0
@@ -117,7 +118,6 @@ class one_one_simulator(Node):
         self.defender_prev_pos = np.array([2.0, 0.0, 0.0, 2.0, 0.0, 0.2, 0.0])
         self.arena_range_x = 3.5
         self.arena_range_y = self.arena_range_x
-        self.flag = False
         self.new_pos = Pose2D()
         
         # training log
@@ -237,7 +237,6 @@ class one_one_simulator(Node):
     def timer_callback(self):
         if self.ep <= total_episodes:
             if not self.done_episode:
-                self.flag = True
                 ####### ATTACKER TRAINING LOOP ######
                 #####################################
                 ######## SENDING THE COMMANDS #######
@@ -273,28 +272,30 @@ class one_one_simulator(Node):
                 self.defender_dash(dash_speed, dash_dir)
                 self.defender_state_pub.publish(Empty())
                 if self.defender_recv_update:
+                    self.steps += 1   # record states, actions every 3 steps
+
                     state_list = self.defender_info.states
                     state = np.array([state_list[0], state_list[1], state_list[2], state_list[3], state_list[4],
                                       state_list[5], self.ball_pos.x, self.ball_pos.y])
                     def_reward = self.defender_info.rewards
                     def_done = self.defender_info.done
+                    self.defender_episodic_rewards += def_reward
 
                     # normalize the states input
                     normal_state = state
                     normal_pre_state = self.defender_prev_state
-
+                    
                     if np.linalg.norm(state) > 0 and np.linalg.norm(self.defender_prev_state) > 0:
                         normal_state = state / np.linalg.norm(state)
                         normal_pre_state = self.defender_prev_state / np.linalg.norm(self.defender_prev_state)
 
                     defender_ddpg.buffer.record(obs_tuple=(normal_pre_state, defender_action, def_reward, normal_state))
-                    self.defender_episodic_rewards += def_reward
-
-                    defender_ddpg.buffer.learn(defender_ddpg.target_actor, defender_ddpg.target_critic,
-                                               defender_ddpg.actor_model, defender_ddpg.critic_model, 
-                                               defender_ddpg.critic_optimizer, defender_ddpg.actor_optimizer, gamma=gamma)
-                    defender_ddpg.update_actor_target(tau)
-                    defender_ddpg.update_critic_target(tau)
+                    if (self.steps % 3 == 0 and self.steps > 3) or def_done:
+                        defender_ddpg.buffer.learn(defender_ddpg.target_actor, defender_ddpg.target_critic,
+                                                defender_ddpg.actor_model, defender_ddpg.critic_model, 
+                                                defender_ddpg.critic_optimizer, defender_ddpg.actor_optimizer, gamma=gamma)
+                        defender_ddpg.update_actor_target(tau)
+                        defender_ddpg.update_critic_target(tau)
 
                     # End this episode when `done` is True
                     if def_done:
@@ -307,10 +308,10 @@ class one_one_simulator(Node):
 
                     defender_ep_rewards.append(self.defender_episodic_rewards)
 
-            elif self.done_episode and self.flag:
-                self.flag = False
+            elif self.done_episode:
+                self.steps = 0
                 self.ep += 1
-                
+
                 # reset the state input of the defender
                 angle = math.degrees(math.atan2(self.new_pos.y - 0.0,
                                                 self.new_pos.x - 2.0))
@@ -362,41 +363,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-    
-    
-
-######### TRAINING ATTACKER FROM SCRATCH ############
-    
-# state_list = self.step_info.states
-# state = np.array([state_list[0], state_list[1]])
-# reward = self.step_info.rewards
-# done = self.step_info.done
-
-# normal_state = state
-# normal_pre_state = self.prev_state
-
-# # normalize input
-# if np.linalg.norm(state) > 0 and np.linalg.norm(self.prev_state) > 0:
-#     normal_state = state / np.linalg.norm(state)
-#     normal_pre_state = self.prev_state / np.linalg.norm(self.prev_state)
-
-# attacker_ddpg.buffer.record(obs_tuple=(normal_pre_state, action, reward, normal_state))
-# self.episodic_reward += reward
-
-# attacker_ddpg.buffer.learn(attacker_ddpg.target_actor, attacker_ddpg.target_critic,
-#                             attacker_ddpg.actor_model, attacker_ddpg.critic_model, 
-#                             attacker_ddpg.critic_optimizer, attacker_ddpg.actor_optimizer, gamma=gamma)
-# attacker_ddpg.update_actor_target(tau)
-# attacker_ddpg.update_critic_target(tau)
-
-# # End this episode when `done` is True
-# if done:
-#     self.done_episode = True
-#     self.reset_signal()
-
-# self.prev_state = normal_state
-# self.ball_prev_pos = state
-# self.recv_update = False
-
-# ep_reward_list.append(self.episodic_reward)
-# defender_ep_rewards.append(self.defender_episodic_rewards)

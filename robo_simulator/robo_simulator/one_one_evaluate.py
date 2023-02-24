@@ -28,7 +28,7 @@ class Defender_Evaluate(Node):
     def __init__(self):
         super().__init__("defender_eval")
         
-        timer_period = 0.002
+        timer_period = 0.01
         self.timer_ = self.create_timer(timer_period, self.timer_callback)
         
         # receive ball and robot position
@@ -62,7 +62,7 @@ class Defender_Evaluate(Node):
         self.actor_model = DDPG_robo(0., 0., 0., 0., num_states=2, flag="predict")
         self.actor_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_attacker/attacker_actor.h5")
         self.defender_model = DDPG_robo(0.,0.,0.,0., num_states=8, flag="defender_predict")
-        self.defender_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_actor_4000.h5")
+        self.defender_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_checkpt_5000.h5")
         
     def defender_callback(self, def_pos: Pose2D):
         self.defender_pos = def_pos
@@ -170,7 +170,7 @@ class Defender_Evaluate(Node):
             ######### SEND ATTACKER COMMANDS #########
             ball_pos = np.array([self.ball_pos.x, self.ball_pos.y])
             tf_prev_state = tf.expand_dims(tf.convert_to_tensor(ball_pos), 0)
-            action = self.actor_model.actor_model.predict(tf_prev_state)
+            action = self.actor_model.actor_model.predict(tf_prev_state, verbose=0)
             outputs = action[0] * kickdir_high
             outputs[0] = tf.clip_by_value(outputs[0], kickpow_lower_bound, kickpow_upper_bound)   # kick power
             outputs[1] = tf.clip_by_value(outputs[1], kickdir_low, kickdir_high) # kick direction
@@ -198,7 +198,7 @@ class Defender_Evaluate(Node):
             defender_input = defender_input / np.linalg.norm(defender_input)
             
             def_state = tf.expand_dims(tf.convert_to_tensor(defender_input), 0)
-            defender_action = self.defender_model.actor_model.predict(def_state)
+            defender_action = self.defender_model.actor_model.predict(def_state, verbose=0)
             outputs = defender_action[0] * 100.0
             outputs[0] = tf.clip_by_value(outputs[0], 50., 100.)   # dash power
             outputs[1] = tf.clip_by_value(outputs[1], -100., 100.) # dash direction

@@ -32,50 +32,61 @@ class OUActionNoise:
             self.x_prev = np.zeros_like(self.mean)
 
 
-"""
-The `Buffer` class implements Experience Replay.
----
-**Critic loss** - Mean Squared Error of `y - Q(s, a)`
-where `y` is the expected return as seen by the Target network,
-and `Q(s, a)` is action value predicted by the Critic network. `y` is a moving target
-that the critic model tries to achieve; we make this target
-stable by updating the Target model slowly.
-**Actor loss** - This is computed using the mean of the value given by the Critic network
-for the actions taken by the Actor network. We seek to maximize this quantity.
-Hence we update the Actor network so that it produces actions that get
-the maximum predicted value as seen by the Critic, for a given state.
-"""
-
 class Buffer():
-    def __init__(self, num_states, buffer_capacity=100000, batch_size=64):
+    """
+    The `Buffer` class implements Experience Replay.
+    ---
+    **Critic loss** - Mean Squared Error of `y - Q(s, a)`
+    where `y` is the expected return as seen by the Target network,
+    and `Q(s, a)` is action value predicted by the Critic network. `y` is a moving target
+    that the critic model tries to achieve; we make this target
+    stable by updating the Target model slowly.
+    **Actor loss** - This is computed using the mean of the value given by the Critic network
+    for the actions taken by the Actor network. We seek to maximize this quantity.
+    Hence we update the Actor network so that it produces actions that get
+    the maximum predicted value as seen by the Critic, for a given state.
+    """
+
+    def __init__(self, num_states, buffer_capacity=100000, batch_size=128):
         # Number of "experiences" to store at max
         self.buffer_capacity = buffer_capacity
         # Num of tuples to train on.
         self.batch_size = batch_size
 
         # Its tells us num of times record() was called.
-        self.buffer_counter = 0
+        self.reward_buffer_counter = 0
+        self.reward_index = 0
         self.num_states = num_states
 
         # Instead of list of tuples as the exp.replay concept go
         # We use different np.arrays for each tuple element
-        self.state_buffer = np.zeros((self.buffer_capacity, self.num_states))
-        self.action_buffer = np.zeros((self.buffer_capacity, num_actions))
-        self.reward_buffer = np.zeros((self.buffer_capacity, 1))
-        self.next_state_buffer = np.zeros((self.buffer_capacity, self.num_states))
+        self.state_buffer = np.zeros((3*self.buffer_capacity, self.num_states))
+        self.action_buffer = np.zeros((3*self.buffer_capacity, num_actions))
+        self.reward_buffer = np.zeros((self.buffer_capacity, 3))   # store three col of rewards
+        self.next_state_buffer = np.zeros((3*self.buffer_capacity, self.num_states))
 
     # Takes (s,a,r,s') obervation tuple as input
     def record(self, obs_tuple):
         # Set index to zero if buffer_capacity is exceeded,
         # replacing old records
-        index = self.buffer_counter % self.buffer_capacity
+        index = self.reward_buffer_counter % self.buffer_capacity
         
+        # rewards batch has 3 columns
+        if (self.reward_buffer_counter % 3 == 0 and self.reward_buffer_counter > 0):
+            if self.reward_index+1 < self.buffer_capacity:
+                self.reward_index += 1
+                
+            else:
+                self.reward_index = 0
+                self.reward_buffer_counter = 0
+                index = 0
+            
         self.state_buffer[index] = obs_tuple[0]
         self.action_buffer[index] = obs_tuple[1]
-        self.reward_buffer[index] = obs_tuple[2]
+        self.reward_buffer[self.reward_index][self.reward_buffer_counter%3] = obs_tuple[2]
         self.next_state_buffer[index] = obs_tuple[3]
 
-        self.buffer_counter += 1
+        self.reward_buffer_counter += 1
 
     # Eager execution is turned on by default in TensorFlow 2. Decorating with tf.function allows
     # TensorFlow to build a static graph out of the logic and computations in our function.
@@ -98,11 +109,20 @@ class Buffer():
         # Training and updating Actor & Critic networks.
         # See Pseudo Code.
         with tf.GradientTape() as tape:
+            # target actions: value network's predicted actions for next time step
             target_actions = target_actor(next_state_batch, training=True)
-            y = reward_batch + gamma * target_critic(
+
+            # the following y is the TD Target
+            # implement 3-step TD Target
+            G3 = gamma*reward_batch[:,0] + gamma**2 * reward_batch[:,1] + gamma**3 * reward_batch[:,2]
+            y = G3 + gamma**4 * target_critic(
                 [next_state_batch, target_actions], training=True
             )
+
+            # the critic value is the value given by the value network
             critic_value = critic_model([state_batch, action_batch], training=True)
+
+            # this is the square of TD error
             critic_loss = tf.math.reduce_mean(tf.math.square(y - critic_value))
 
         critic_grad = tape.gradient(critic_loss, critic_model.trainable_variables)
@@ -131,19 +151,22 @@ class Buffer():
               critic_optimizer,
               actor_optimizer,
               gamma):
-        # Get sampling range
-        record_range = min(self.buffer_counter, self.buffer_capacity)
+        # Get reward sampling range
+        reward_record_range = min(self.reward_buffer_counter, self.buffer_capacity)
         # Randomly sample indices
-        batch_indices = np.random.choice(record_range, self.batch_size)
+        reward_batch_indices = np.random.choice(reward_record_range, self.batch_size)
 
         # Convert to tensors
-        state_batch = tf.convert_to_tensor(self.state_buffer[batch_indices])
-        action_batch = tf.convert_to_tensor(self.action_buffer[batch_indices])
-        reward_batch = tf.convert_to_tensor(self.reward_buffer[batch_indices])
-        reward_batch = tf.cast(reward_batch, dtype=tf.float32)
-        next_state_batch = tf.convert_to_tensor(self.next_state_buffer[batch_indices])
+        state_batch = tf.convert_to_tensor(self.state_buffer[3*reward_batch_indices])
+        action_batch = tf.convert_to_tensor(self.action_buffer[3*reward_batch_indices])
 
-        self.update(state_batch, action_batch, reward_batch, next_state_batch,
+        # sample 3 steps' rewards and state at 4th steps
+        reward_batch = tf.convert_to_tensor(self.reward_buffer[reward_batch_indices])
+        reward_batch = tf.cast(reward_batch, dtype=tf.float32)
+        next_state_batch = tf.convert_to_tensor(self.next_state_buffer[3*reward_batch_indices+2])
+
+        self.update(state_batch, action_batch,
+                    reward_batch, next_state_batch,
                     target_actor,
                     target_critic,
                     actor_model,
@@ -151,6 +174,7 @@ class Buffer():
                     critic_optimizer,
                     actor_optimizer,
                     gamma)
+
 
 class DDPG_robo():
     def __init__(self, first_low=0.0, first_high=0.0, 

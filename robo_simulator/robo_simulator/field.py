@@ -51,7 +51,7 @@ class one_one_field(Node):
         self.notify_env = self.create_publisher(Empty_msg, "attacker_env/update", 10)
         self.notify_def_env = self.create_publisher(Empty_msg, "defender_env/def_update", 10)
         
-        self.timer_period = 0.002
+        self.timer_period = 0.01
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
         
         # generate marker for arena
@@ -119,7 +119,7 @@ class one_one_field(Node):
         self.reset_flag = False
         
         ###### SET TO TRUE WHEN EVALUATING MODEL ######
-        self.evaluate = False
+        self.evaluate = True
     
     def reset_pos_callback(self, new_pos: Pose2D):
         """
