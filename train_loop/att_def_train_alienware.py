@@ -13,13 +13,13 @@ from rl.ddpg_robo_soccer import OUActionNoise, DDPG_robo
 """
 Training loop for the RL network.
 """
-std_dev = 0.05
+std_dev = 0.1
 ou_noise = OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev) * np.ones(1))
 
-total_episodes = 5000
+total_episodes = 20000
 # Used to update target networks
 tau = 0.002
-gamma = 0.99
+gamma = 0.9
 
 # To store reward history of each episode
 ep_reward_list = []
@@ -76,51 +76,47 @@ class DefenderEnv():
         if self.is_scored():
             rewards -= 3000.0
             done = True
-            
+
+        # stop the defender when it runs pass the attacker
         if not self.is_scored() and self.is_out_of_range():
-            rewards -= 3000.0
+            rewards = -1200.0
             done = True
 
-        if self.dist_between_players() <= 0.8:
-            done = True
-            rewards += 1500.0
+        if self.dist_between_players() <= 0.8 and self.player_facing() <= 15.0:
+            rewards += 500.0 * 15.0 / (self.player_facing() + 1)
 
-        if not self.is_scored() or self.ball_to_goal_dist() > 2.0:
-            rewards += 5.0
-
-        if abs(self.player_facing()) <= 45.0:
-            rewards += 300.0 * 45.0 / (self.player_facing() + 1)
+        elif self.dist_between_players() <= 1.6 and self.player_facing() <= 25.0:
+            rewards += 300 * 25.0 / self.player_facing()
             
-        elif abs(self.player_facing()) > 45.0:
-            rewards += -(abs(self.player_facing())*90.0/55) + (-10 + 45.0*90/55)
+        elif self.dist_between_players() <= 1.6 and self.player_facing() > 100.0:
+            rewards -= 50.0
 
         # if the player chases the opponent directly
         # it will obtain the max rewards
-        if self.count_steps == 3:
-            if (self.chasing_score() <= 30.0):
-                rewards += 300 * 30.0 / (self.chasing_score()+1)
+        if self.count_steps == 5:
+            if abs(self.attacker_pos[0] - self.defender_pos[0]) <= 2.0 and self.chasing_score() <= 10.0:
+                rewards += 20.0
 
-            elif (self.chasing_score() > 30.0):
-                rewards += -3.0*self.chasing_score() + 80.0
+            elif abs(self.attacker_pos[0] - self.defender_pos[0]) <= 3.2 and self.chasing_score() <= 20.0:
+                rewards += 10.0
+                
+            elif abs(self.attacker_pos[0] - self.defender_pos[0]) <= 2.0 and self.chasing_score() > 20.0:
+                rewards -= 20.0
+
+            if self.chasing_score() > 90.0:
+                rewards -= 100.0
 
             self.count_steps = 0
-            self.last_defender_pos = self.defender_pos
 
         if self.ball_to_goal_dist() <= 2.0:
-            rewards -= 100.0
+            rewards -= 500.0
 
         # punish if the player goes over the attacker
         # without being in range    
         if (self.defender_pos[0] < self.attacker_pos[0]+0.1):
             done = True
-            if (self.dist_between_players() >= 1.0):
-                rewards -= 1000.0
 
         self.last_dist_players = self.dist_between_players()
-        self.last_attacker_pos = self.attacker_pos
-        self.last_defender_pos = self.defender_pos
-        self.last_defender_dir = self.defender_pos[2]
-        self.last_dist_to_start = self.dist_to_start()   # distance to the other side of the field
         extra_states = np.array([self.dist_between_players(), self.angle_between()])
 
         return rewards, done, extra_states
@@ -145,13 +141,7 @@ class DefenderEnv():
         Is player facing the target (compare angles).
         """
         angle_between_players = self.angle_between()
-        def_facing = self.defender_pos[2]
-
-        # if def_facing < 0:
-        #     def_facing = 180 - abs(def_facing)
-
-        # elif def_facing >= 0:
-        #     def_facing = 180 + def_facing
+        def_facing = math.degrees(self.defender_pos[2])
 
         if angle_between_players < 0:
             angle_between_players = 360 - abs(angle_between_players)
@@ -292,7 +282,6 @@ class Train():
         self.prev_ball_pos = np.array([0.2, 0.0])
         self.attacker_actor = attacker_actor()
         self.attacker_actor.load_weights("/home/muye/rl_soccer/successful_model/one_attacker/attacker_actor_2000.h5")
-        # self.attacker_actor.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/successful_model/one_attacker/attacker_actor_2000.h5")
 
         # defender params
         self.env = DefenderEnv()
@@ -304,7 +293,7 @@ class Train():
                                                                                    # angle_between, ball_x, ball_y]
         self.extra_states = np.array([4.0, 0.0])
         self.defender_actor = DDPG_robo(first_low=40., first_high=70., sec_low=-100, sec_high=100, num_states=7, flag="defender")
-        
+
         # DEBUG:
         self.rewards_list = []
         self.episodes_axis = []
@@ -409,7 +398,7 @@ class Train():
             init_player_facing = math.atan2(self.attacker_pos[1], 4.0)
             self.defender_prev_state = np.array([2.0, def_y, def_init_facing, init_dist_between_players,
                                                  init_player_facing, 0.2, 0.0])
-            
+
             self.defender_prev_state /= np.linalg.norm(self.defender_prev_state)
             normal_pre_state = self.defender_prev_state
             ep_reward_list = []
@@ -464,7 +453,6 @@ class Train():
                 self.defender_dash((dash_speed, dash_dir)) 
                 self.defender_pos[0] += self.TIME_STEP * self.def_velx
                 self.defender_pos[1] += self.TIME_STEP * self.def_vely
-
                 self.defender_pos[2] = math.radians(180.0 + dash_dir)
 
                 ######## REWARDS #########
@@ -486,11 +474,11 @@ class Train():
                                 self.defender_actor.critic_optimizer, self.defender_actor.actor_optimizer, gamma=gamma)
                     self.defender_actor.update_actor_target(tau)
                     self.defender_actor.update_critic_target(tau)
-                
+
                 self.defender_prev_state = normal_state
                 normal_pre_state = normal_state
                 ep_reward_list.append(rewards)
-                
+
                 # DEBUG: plot defender position
                 self.x_pos.append(self.defender_pos[0])
                 self.y_pos.append(self.defender_pos[1])
@@ -498,7 +486,7 @@ class Train():
                 self.att_ypos.append(self.attacker_pos[1])
                 self.theta_list.append(self.defender_pos[2])
                 t_axis.append(count)
-                
+
                 if done:
                     break
 
@@ -523,16 +511,16 @@ class Train():
             # self.theta_list = []
         
             if episodes % 1000 == 0 and episodes > 0:
-                self.defender_actor.actor_model.save_weights("/home/muye/rl_soccer/trained_model/one_vs_one/defender_checkpt_5000.h5")
-                # self.defender_actor.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_checkpt_2000.h5")
+                self.defender_actor.actor_model.save_weights("/home/muye/rl_soccer/trained_model/one_vs_one/defender_checkpt_alien.h5")
+                self.defender_actor.critic_model.save_weights("/home/muye/rl_soccer/trained_model/one_vs_one/defender_critic_checkpt_alien.h5")
+                self.defender_actor.target_actor.save_weights("/home/muye/rl_soccer/trained_model/one_vs_one/defender_target_actor_checkpt_alien.h5")
+                self.defender_actor.target_critic.save_weights("/home/muye/rl_soccer/trained_model/one_vs_one/defender_target_critic_checkpt_alien.h5")
 
-        self.defender_actor.actor_model.save_weights('/home/muye/rl_soccer/trained_model/one_vs_one/defender_actor_5000.h5')
-        # self.defender_actor.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_actor_2000.h5")
-        plt.yscale("log")
+        self.defender_actor.actor_model.save_weights('/home/muye/rl_soccer/trained_model/one_vs_one/defender_actor_alien.h5')
         plt.plot(self.episodes_axis, self.rewards_list, '-b', label="log scale rewards")
         plt.legend()
         plt.show()
-               
+    
 if __name__ == "__main__":
     train_loop = Train()
     train_loop.train_loop()
