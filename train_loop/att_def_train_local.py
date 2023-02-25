@@ -12,13 +12,13 @@ from rl.ddpg_robo_soccer import OUActionNoise, DDPG_robo
 """
 Training loop for the RL network.
 """
-std_dev = 0.05
+std_dev = 0.1
 ou_noise = OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev) * np.ones(1))
 
 total_episodes = 20000
 # Used to update target networks
 tau = 0.002
-gamma = 0.9
+gamma = 0.8
 
 # To store reward history of each episode
 ep_reward_list = []
@@ -82,36 +82,34 @@ class DefenderEnv():
             rewards = -3000.0
             done = True
             
-        elif self.defender_pos[0] < 1.0+self.attacker_pos[0]:
+        elif self.defender_pos[0] < self.attacker_pos[0]-0.5:
             done = True
             if self.dist_between_players() > 1.6:
                 rewards -= 200.0
             
-        if self.dist_between_players() <= 0.8:
-            rewards += 500.0
+        if self.dist_between_players() <= 0.8 and self.defender_pos[0] >= self.attacker_pos[0]:
+            rewards += 1000.0
+            done = True
 
         if self.dist_between_players() <= 0.8 and self.player_facing() <= 15.0:
             rewards += 500.0 * 15.0 / (self.player_facing() + 1)
 
         elif self.dist_between_players() <= 1.6 and self.player_facing() <= 25.0:
-            rewards += 300 * 25.0 / self.player_facing()
+            rewards += 200 * 25.0 / self.player_facing()
             
         elif self.dist_between_players() <= 1.6 and self.player_facing() > 100.0:
             rewards -= 50.0
 
         # if the player chases the opponent directly
         # it will obtain the max rewards
-        if self.count_steps == 5:
-            if abs(self.attacker_pos[0] - self.defender_pos[0]) <= 2.0 and self.chasing_score() <= 10.0:
-                rewards += 10.0 / (self.chasing_score() + 1)
+        if self.chasing_score() <= 10.0:
+            rewards += 50*10.0 / (self.chasing_score() + 1)
 
-            elif abs(self.attacker_pos[0] - self.defender_pos[0]) <= 3.2 and self.chasing_score() <= 20.0:
-                rewards += 5.0 / (self.chasing_score() + 1)
+        elif self.chasing_score() <= 20.0:
+            rewards += 20*5.0 / (self.chasing_score() + 1)
 
-            elif abs(self.attacker_pos[0] - self.defender_pos[0]) <= 2.0 and self.chasing_score() > 20.0:
-                rewards -= 0.05*self.chasing_score()
-
-            self.count_steps = 0
+        elif self.chasing_score() > 20.0:
+            rewards -= 0.2*self.chasing_score()
 
         if self.ball_to_goal_dist() <= 2.0:
             rewards -= 1500.0
@@ -132,7 +130,7 @@ class DefenderEnv():
         """
         Angle between players.
         """
-        
+
         return math.degrees(math.atan2(self.attacker_pos[1] - self.defender_pos[1],
                                        self.attacker_pos[0] - self.defender_pos[0]))
 
@@ -268,7 +266,7 @@ class Train():
         self.MAX_KICK_VEL = 30
         self.MAX_STRENGTH = 100
         self.BALL_DECAY = 0.4
-        self.PLAYER_MAX_SPEED = 0.8
+        self.PLAYER_MAX_SPEED = 0.6
         self.TIME_STEP = 0.05  # simulator timestep 1.0 second
         self.last_vel = 0.
         self.kick_power = 0.0
@@ -374,15 +372,15 @@ class Train():
         self.def_vely = self.def_dash_speed * math.sin(self.def_dash_dir)
 
     def train_loop(self):
-        attacker_start_pos = np.linspace(start=-3.0, stop=3.0, num=10)
+        attacker_start_pos = np.linspace(start=-3.0, stop=3.0, num=5)
         att_y = np.random.uniform(low=-2.5, high=2.5)
         for episodes in range(total_episodes):
             t_axis = []
             count = 0
             ######### ATTACKER INIT #########
             att_x = -2.0
-            if episodes % 5 == 0 and episodes > 0:
-                attacker_start_seed = np.random.randint(low=0, high=10)
+            if episodes % 2 == 0 and episodes > 0:
+                attacker_start_seed = np.random.randint(low=0, high=5)
                 att_y = attacker_start_pos[attacker_start_seed]
 
             self.attacker_pos = np.array([att_x, att_y, 0.0])   # [x, y, theta]
@@ -495,20 +493,20 @@ class Train():
             self.rewards_list.append(avg_reward)
             self.episodes_axis.append(episodes)
 
-            # # DEBUG: plot defender position
-            # plt.plot(self.x_pos, self.y_pos, '*', label="defender pos")
-            # plt.plot(self.att_xpos, self.att_ypos, '*r', label="attacker pos")
-            # plt.legend()
-            # plt.show()
+            # DEBUG: plot defender position
+            plt.plot(self.x_pos, self.y_pos, '*', label="defender pos")
+            plt.plot(self.att_xpos, self.att_ypos, '*r', label="attacker pos")
+            plt.legend()
+            plt.show()
 
-            # plt.plot(t_axis, self.theta_list, label="defender heading")
-            # plt.legend()
-            # plt.show()
-            # self.x_pos = []
-            # self.y_pos = []
-            # self.att_xpos = []
-            # self.att_ypos = []
-            # self.theta_list = []
+            plt.plot(t_axis, self.theta_list, label="defender heading")
+            plt.legend()
+            plt.show()
+            self.x_pos = []
+            self.y_pos = []
+            self.att_xpos = []
+            self.att_ypos = []
+            self.theta_list = []
         
             if episodes % 1000 == 0 and episodes > 0:
                 self.defender_actor.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_actor_checkpt_20000.h5")
