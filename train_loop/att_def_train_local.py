@@ -13,6 +13,7 @@ from rl.ddpg_robo_soccer import OUActionNoise, DDPG_robo
 Training loop for the RL network.
 """
 std_dev = 0.1
+std_dev = 0.1
 ou_noise = OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev) * np.ones(1))
 
 total_episodes = 20000
@@ -79,7 +80,7 @@ class DefenderEnv():
 
         # stop the defender when it runs pass the attacker
         if not self.is_scored() and self.is_out_of_range():
-            rewards = -3000.0
+            rewards = -1500.0
             done = True
             
         elif self.defender_pos[0] < self.attacker_pos[0]-0.5:
@@ -112,10 +113,10 @@ class DefenderEnv():
             rewards -= 0.2*self.chasing_score()
 
         if self.ball_to_goal_dist() <= 2.0:
-            rewards -= 1500.0
+            rewards -= 150.0
 
         self.last_dist_players = self.dist_between_players()
-        extra_states = np.array([self.dist_between_players(), self.angle_between()])
+        extra_states = np.array([self.dist_between_players(), self.player_facing(), self.angle_between()])
 
         return rewards, done, extra_states
 
@@ -287,10 +288,10 @@ class Train():
         self.def_velx = 0.0
         self.def_vely = 0.0
         self.defender_pos = np.array([2.0, 0.0, 0.0])
-        self.defender_prev_state = np.array([2.0, 0.0, 0.0, 4.0, 0.0, 0.2, 0.0])   # [x, y, theta, dist_between_players, 
+        self.defender_prev_state = np.array([2.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.2, 0.0])   # [x, y, theta, dist_between_players, 
                                                                                         #  player_facing, angle_between, ball_x, ball_y]
-        self.extra_states = np.array([4.0, 0.0])
-        self.defender_actor = DDPG_robo(first_low=40., first_high=70., sec_low=-100, sec_high=100, num_states=7, flag="defender")
+        self.extra_states = np.array([4.0, 0.0, 0.0])
+        self.defender_actor = DDPG_robo(first_low=40., first_high=70., sec_low=-100, sec_high=100, num_states=8, flag="defender")
         
         # DEBUG:
         self.rewards_list = []
@@ -370,7 +371,7 @@ class Train():
         
         self.def_velx = self.def_dash_speed * math.cos(self.def_dash_dir)
         self.def_vely = self.def_dash_speed * math.sin(self.def_dash_dir)
-
+    
     def train_loop(self):
         attacker_start_pos = np.linspace(start=-3.0, stop=3.0, num=5)
         att_y = np.random.uniform(low=-2.5, high=2.5)
@@ -382,7 +383,7 @@ class Train():
             if episodes % 2 == 0 and episodes > 0:
                 attacker_start_seed = np.random.randint(low=0, high=5)
                 att_y = attacker_start_pos[attacker_start_seed]
-
+            
             self.attacker_pos = np.array([att_x, att_y, 0.0])   # [x, y, theta]
             self.attacker_ang = 0.0
             self.ball_pos = np.array([self.attacker_pos[0]+0.2, self.attacker_pos[1]])
@@ -394,9 +395,9 @@ class Train():
             self.defender_pos = np.array([2.0, def_y, def_init_facing])
             init_dist_between_players = math.sqrt((self.attacker_pos[0]-2.0)**2 + (self.attacker_pos[1])**2)
             init_player_facing = math.atan2(self.attacker_pos[1], 4.0)
-            self.defender_prev_state = np.array([2.0, def_y, def_init_facing, init_dist_between_players,
+            self.defender_prev_state = np.array([2.0, def_y, def_init_facing, init_dist_between_players, init_player_facing, 
                                                  init_player_facing, 0.2, 0.0])
-
+            
             self.defender_prev_state /= np.linalg.norm(self.defender_prev_state)
             normal_pre_state = self.defender_prev_state
             ep_reward_list = []
@@ -425,8 +426,8 @@ class Train():
                 self.follow_ball(self.ball_pos)
 
                 ball_to_player = self.player_to_ball_dist()
-                if (self.player_state == State.DASHING and
-                   not self.ball_state == State.KICKING and
+                if (self.player_state == State.DASHING and 
+                   not self.ball_state == State.KICKING and 
                    ball_to_player <= 0.1):
                     rb_facing = (self.attacker_ang * np.pi)/180.
                     self.ball_pos[0] = self.attacker_pos[0] + ball_to_player*math.cos(rb_facing)
@@ -484,7 +485,7 @@ class Train():
                 self.att_ypos.append(self.attacker_pos[1])
                 self.theta_list.append(self.defender_pos[2])
                 t_axis.append(count)
-
+                
                 if done:
                     break
 
