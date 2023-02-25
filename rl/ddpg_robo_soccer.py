@@ -47,7 +47,7 @@ class Buffer():
     the maximum predicted value as seen by the Critic, for a given state.
     """
 
-    def __init__(self, num_states, buffer_capacity=100000, batch_size=128):
+    def __init__(self, num_states, buffer_capacity=10000, batch_size=64):
         # Number of "experiences" to store at max
         self.buffer_capacity = buffer_capacity
         # Num of tuples to train on.
