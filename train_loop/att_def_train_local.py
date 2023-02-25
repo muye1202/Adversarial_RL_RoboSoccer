@@ -12,11 +12,10 @@ from rl.ddpg_robo_soccer import OUActionNoise, DDPG_robo
 """
 Training loop for the RL network.
 """
-std_dev = 0.1
-std_dev = 0.1
+std_dev = 0.05
 ou_noise = OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev) * np.ones(1))
 
-total_episodes = 20000
+total_episodes = 5000
 # Used to update target networks
 tau = 0.002
 gamma = 0.8
@@ -75,45 +74,45 @@ class DefenderEnv():
         # check whether the robot moves towards
         # the goal in the past episode:
         if self.is_scored():
-            rewards -= 3000.0
+            rewards -= 1000.0
             done = True
 
         # stop the defender when it runs pass the attacker
         if not self.is_scored() and self.is_out_of_range():
-            rewards = -1500.0
+            rewards = -800.0
             done = True
             
         elif self.defender_pos[0] < self.attacker_pos[0]-0.5:
             done = True
             if self.dist_between_players() > 1.6:
-                rewards -= 200.0
-            
+                rewards -= 20.0
+
         if self.dist_between_players() <= 0.8 and self.defender_pos[0] >= self.attacker_pos[0]:
-            rewards += 1000.0
+            rewards += 100.0
             done = True
 
         if self.dist_between_players() <= 0.8 and self.player_facing() <= 15.0:
-            rewards += 500.0 * 15.0 / (self.player_facing() + 1)
+            rewards += 10.0 * 15.0 / (self.player_facing() + 1)
 
         elif self.dist_between_players() <= 1.6 and self.player_facing() <= 25.0:
-            rewards += 200 * 25.0 / self.player_facing()
+            rewards += 5 * 25.0 / self.player_facing()
             
         elif self.dist_between_players() <= 1.6 and self.player_facing() > 100.0:
-            rewards -= 50.0
+            rewards -= 5.0
 
         # if the player chases the opponent directly
         # it will obtain the max rewards
         if self.chasing_score() <= 10.0:
-            rewards += 50*10.0 / (self.chasing_score() + 1)
+            rewards += 50.0 # 50*10.0 / (self.chasing_score() + 1)
 
         elif self.chasing_score() <= 20.0:
-            rewards += 20*5.0 / (self.chasing_score() + 1)
+            rewards += 20.0 # 20*5.0 / (self.chasing_score() + 1)
 
         elif self.chasing_score() > 20.0:
-            rewards -= 0.2*self.chasing_score()
+            rewards -= 0.1*self.chasing_score()
 
         if self.ball_to_goal_dist() <= 2.0:
-            rewards -= 150.0
+            rewards -= 15.0
 
         self.last_dist_players = self.dist_between_players()
         extra_states = np.array([self.dist_between_players(), self.player_facing(), self.angle_between()])
@@ -245,17 +244,6 @@ def attacker_actor():
     model.add(layers.Dense(256, activation="relu", use_bias=True))
     model.add(layers.Dense(256, activation="tanh", use_bias=True))
     model.add(layers.Dense(2, activation="tanh", use_bias=True, kernel_initializer=last_init))
-
-    # # attacker is trained with 3 layered NN
-    # inputs = layers.Input(shape=(2))
-    # out = layers.Dense(256, activation="relu", use_bias=True)(inputs)
-    # out = layers.Dense(256, activation="tanh", use_bias=True)(out)
-    # outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=last_init)(out)
-
-    # max_num = np.array([first_low, first_high, sec_low, sec_high])
-    # outputs = outputs * np.amax(max_num)
-
-    # model = tf.keras.Model(inputs, outputs)
     return model
 
 
@@ -281,7 +269,9 @@ class Train():
         self.prev_ball_pos = np.array([0.2, 0.0])
         self.attacker_actor = attacker_actor()
         self.attacker_actor.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/successful_model/one_attacker/attacker_actor_2000.h5")
-
+        train_log_dir = "/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/train_log/modified"
+        self.train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+        
         # defender params
         self.env = DefenderEnv()
         self.DEFENDER_MAX_SPEED = 1.0
@@ -398,7 +388,7 @@ class Train():
             self.defender_prev_state = np.array([2.0, def_y, def_init_facing, init_dist_between_players, init_player_facing, 
                                                  init_player_facing, 0.2, 0.0])
             
-            self.defender_prev_state /= np.linalg.norm(self.defender_prev_state)
+            # self.defender_prev_state /= np.linalg.norm(self.defender_prev_state)
             normal_pre_state = self.defender_prev_state
             ep_reward_list = []
 
@@ -460,10 +450,10 @@ class Train():
 
                 # convert defender heading to radians
                 normal_state = defender_input
-                # normalize input
-                if np.linalg.norm(defender_input) > 0 and np.linalg.norm(normal_pre_state) > 0:
-                    normal_state = defender_input / np.linalg.norm(defender_input)
-                    normal_pre_state = normal_pre_state / np.linalg.norm(normal_pre_state)
+                # # normalize input
+                # if np.linalg.norm(defender_input) > 0 and np.linalg.norm(normal_pre_state) > 0:
+                #     normal_state = defender_input / np.linalg.norm(defender_input)
+                #     normal_pre_state = normal_pre_state / np.linalg.norm(normal_pre_state)
 
                 # 3-step TD Target
                 self.defender_actor.buffer.record((normal_pre_state, defender_action, rewards, normal_state))
@@ -493,22 +483,29 @@ class Train():
             print("Episode * {} * Avg Reward is ==> {}".format(episodes, avg_reward))
             self.rewards_list.append(avg_reward)
             self.episodes_axis.append(episodes)
+            
+            with self.train_summary_writer.as_default():
+                tf.summary.scalar('rewards', avg_reward, step=episodes)
+                tf.summary.scalar('actor_score', self.defender_actor.buffer.actor_loss, step=episodes)
+                tf.summary.scalar('critic_loss', self.defender_actor.buffer.critic_loss, step=episodes)
+                tf.summary.scalar('actor_gradient_norm', self.defender_actor.buffer.actor_grad, step=episodes)
+                tf.summary.scalar('critic_gradient_norm', self.defender_actor.buffer.critic_grad, step=episodes)
 
-            # DEBUG: plot defender position
-            plt.plot(self.x_pos, self.y_pos, '*', label="defender pos")
-            plt.plot(self.att_xpos, self.att_ypos, '*r', label="attacker pos")
-            plt.legend()
-            plt.show()
+            # # DEBUG: plot defender position
+            # plt.plot(self.x_pos, self.y_pos, '*', label="defender pos")
+            # plt.plot(self.att_xpos, self.att_ypos, '*r', label="attacker pos")
+            # plt.legend()
+            # plt.show()
 
-            plt.plot(t_axis, self.theta_list, label="defender heading")
-            plt.legend()
-            plt.show()
-            self.x_pos = []
-            self.y_pos = []
-            self.att_xpos = []
-            self.att_ypos = []
-            self.theta_list = []
-        
+            # plt.plot(t_axis, self.theta_list, label="defender heading")
+            # plt.legend()
+            # plt.show()
+            # self.x_pos = []
+            # self.y_pos = []
+            # self.att_xpos = []
+            # self.att_ypos = []
+            # self.theta_list = []
+
             if episodes % 1000 == 0 and episodes > 0:
                 self.defender_actor.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_actor_checkpt_20000.h5")
                 self.defender_actor.critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_critic_checkpt_20000.h5")
@@ -519,11 +516,7 @@ class Train():
         self.defender_actor.critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_critic_20000.h5")
         self.defender_actor.target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_target_actor_20000.h5")
         self.defender_actor.target_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/defender_target_critic_20000.h5")
-        
-        plt.yscale("log")
-        plt.plot(self.episodes_axis, self.rewards_list, label="log scale rewards")
-        plt.legend()
-        plt.show()
+
 
 
 if __name__ == "__main__":

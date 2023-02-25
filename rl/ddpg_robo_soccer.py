@@ -47,7 +47,7 @@ class Buffer():
     the maximum predicted value as seen by the Critic, for a given state.
     """
 
-    def __init__(self, num_states, buffer_capacity=10000, batch_size=64):
+    def __init__(self, num_states, buffer_capacity=10000, batch_size=50):
         # Number of "experiences" to store at max
         self.buffer_capacity = buffer_capacity
         # Num of tuples to train on.
@@ -64,6 +64,11 @@ class Buffer():
         self.action_buffer = np.zeros((3*self.buffer_capacity, num_actions))
         self.reward_buffer = np.zeros((self.buffer_capacity, 3))   # store three col of rewards
         self.next_state_buffer = np.zeros((3*self.buffer_capacity, self.num_states))
+        
+        self.actor_loss = None
+        self.actor_grad = None
+        self.critic_loss = None
+        self.critic_grad = None
 
     # Takes (s,a,r,s') obervation tuple as input
     def record(self, obs_tuple):
@@ -91,7 +96,6 @@ class Buffer():
     # Eager execution is turned on by default in TensorFlow 2. Decorating with tf.function allows
     # TensorFlow to build a static graph out of the logic and computations in our function.
     # This provides a large speed up for blocks of code that contain many small TensorFlow operations such as this one.
-    @tf.function
     def update(
         self,
         state_batch,
@@ -125,7 +129,16 @@ class Buffer():
             # this is the square of TD error
             critic_loss = tf.math.reduce_mean(tf.math.square(y - critic_value))
 
+            # collect critic's loss
+            self.critic_loss = critic_loss
+        
+        # monitor critic's gradient
         critic_grad = tape.gradient(critic_loss, critic_model.trainable_variables)
+        if len(critic_grad) > 0:
+            self.critic_grad = 0.0
+            for i in range(len(critic_grad)):
+                self.critic_grad += tf.norm(critic_grad[i])
+
         critic_optimizer.apply_gradients(
             zip(critic_grad, critic_model.trainable_variables)
         )
@@ -137,7 +150,17 @@ class Buffer():
             # by the critic for our actions
             actor_loss = -tf.math.reduce_mean(critic_value)
 
+            # collect the actor's loss, which should be increasing overtime
+            self.actor_loss = actor_loss
+
         actor_grad = tape.gradient(actor_loss, actor_model.trainable_variables)
+
+        # monitor actor's gradient
+        if len(actor_grad) > 0:
+            self.actor_grad = 0.0
+            for i in range(len(actor_grad)):
+                self.actor_grad += tf.norm(actor_grad[i])
+
         actor_optimizer.apply_gradients(
             zip(actor_grad, actor_model.trainable_variables)
         )
@@ -179,13 +202,13 @@ class Buffer():
 class DDPG_robo():
     def __init__(self, first_low=0.0, first_high=0.0, 
                  sec_low=0.0, sec_high=0.0, 
-                 num_states=2.0, flag="", checkpt=False):
+                 num_states=2.0, flag=""):
         """
         DDPG network for robot soccer.
         """
         # Learning rate for actor-critic models
-        critic_lr = 0.0002
-        actor_lr = 0.0002
+        critic_lr = 0.001
+        actor_lr = 0.001
 
         self.num_states = num_states
         self.flag = flag
@@ -193,11 +216,11 @@ class DDPG_robo():
         self.first_high = first_high
         self.sec_low = sec_low
         self.sec_high = sec_high
-        self.critic_optimizer = tf.keras.optimizers.Adam(critic_lr, clipnorm=0.6)
-        self.actor_optimizer = tf.keras.optimizers.Adam(actor_lr, clipnorm=0.6)
-        self.actor_model = self.get_actor(self.flag, checkpt)   # is this training continuing on last checkpoint    
+        self.critic_optimizer = tf.keras.optimizers.Adadelta(critic_lr, clipnorm=1.2)
+        self.actor_optimizer = tf.keras.optimizers.Adadelta(actor_lr, clipnorm=1.2)
+        self.actor_model = self.get_actor(self.flag)   # is this training continuing on last checkpoint    
         self.critic_model = self.get_critic()
-        self.target_actor = self.get_actor(self.flag, checkpt)
+        self.target_actor = self.get_actor(self.flag)
         self.target_critic = self.get_critic()
         self.buffer = Buffer(num_states=num_states)
 
@@ -213,17 +236,9 @@ class DDPG_robo():
         for (a, b) in zip(self.target_critic.variables, self.critic_model.variables):
             a.assign(b * tau + a * (1 - tau))
 
-    def get_actor(self, flag, checkpt):
-        """
-        Note: We need the initialization for last layer of the Actor to be between
-        `-0.003` and `0.003` as this prevents us from getting `1` or `-1` output values in
-        the initial stages, which would squash our gradients to zero,
-        as we use the `tanh` activation.
-        """
-        # Initialize weights between -3e-3 and 3-e3
-        if not checkpt:
-            last_init = tf.random_uniform_initializer(minval=-0.003, maxval=0.003)
-
+    def get_actor(self, flag):
+        # Le Cun weight initializer
+        last_init = tf.keras.initializers.LecunNormal()
         # attacker is trained with 3 layered NN
         if flag == "predict":
             inputs = layers.Input(shape=(self.num_states))
@@ -239,33 +254,29 @@ class DDPG_robo():
             inputs = layers.Input(shape=(self.num_states))
             out = layers.Dense(256, activation=leaky_relu, use_bias=True)(inputs)
             out = layers.Dense(256, activation=leaky_relu, use_bias=True)(out)
-            out = layers.Dense(256, activation=leaky_relu, use_bias=True)(out)
-            out = layers.Dense(256, activation="tanh", use_bias=True)(out)
-            out = layers.Dense(256, activation="tanh", use_bias=True)(out)
             outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=last_init)(out)
 
         model = tf.keras.Model(inputs, outputs)
         return model
 
     def get_critic(self):
+        # Le Cun weight initializer
+        last_init = tf.keras.initializers.LecunNormal()
         leaky_relu = layers.LeakyReLU(alpha=0.3)
         # State as input
         state_input = layers.Input(shape=(self.num_states))
-        state_out = layers.Dense(16, activation=leaky_relu, use_bias=True)(state_input)
-        state_out = layers.Dense(32, activation=leaky_relu, use_bias=True)(state_out)
-        state_out = layers.Dense(32, activation="relu", use_bias=True)(state_out)
+        state_out = layers.Dense(64, activation=leaky_relu, use_bias=True)(state_input)
+        state_out = layers.Dense(64, activation="tanh", use_bias=True, kernel_initializer=last_init)(state_out)
 
         # Action as input
         action_input = layers.Input(shape=(num_actions))
-        action_out = layers.Dense(32, activation=leaky_relu, use_bias=True)(action_input)
-        action_out = layers.Dense(32, activation=leaky_relu, use_bias=True)(action_input)
-        action_out = layers.Dense(32, activation="tanh", use_bias=True)(action_input)
+        action_out = layers.Dense(64, activation=leaky_relu, use_bias=True)(action_input)
+        action_out = layers.Dense(64, activation="tanh", use_bias=True, kernel_initializer=last_init)(action_input)
 
         # Both are passed through seperate layer before concatenating
         concat = layers.Concatenate(axis=1)([state_out, action_out])
         out = layers.Dense(256, activation=leaky_relu, use_bias=True)(concat)
-        out = layers.Dense(256, activation=leaky_relu, use_bias=True)(concat)
-        out = layers.Dense(256, activation="tanh", use_bias=True)(out)
+        out = layers.Dense(256, activation="tanh", use_bias=True, kernel_initializer=last_init)(out)
         outputs = layers.Dense(1)(out)
 
         # Outputs single value for give state-action
