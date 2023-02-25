@@ -207,7 +207,7 @@ class DDPG_robo():
         DDPG network for robot soccer.
         """
         # Learning rate for actor-critic models
-        critic_lr = 0.001
+        critic_lr = 0.003
         actor_lr = 0.001
 
         self.num_states = num_states
@@ -218,6 +218,7 @@ class DDPG_robo():
         self.sec_high = sec_high
         self.critic_optimizer = tf.keras.optimizers.Adadelta(critic_lr, clipnorm=1.2)
         self.actor_optimizer = tf.keras.optimizers.Adadelta(actor_lr, clipnorm=1.2)
+        self.last_init = tf.keras.initializers.GlorotUniform()
         self.actor_model = self.get_actor(self.flag)   # is this training continuing on last checkpoint    
         self.critic_model = self.get_critic()
         self.target_actor = self.get_actor(self.flag)
@@ -237,14 +238,12 @@ class DDPG_robo():
             a.assign(b * tau + a * (1 - tau))
 
     def get_actor(self, flag):
-        # Le Cun weight initializer
-        last_init = tf.keras.initializers.LecunNormal()
         # attacker is trained with 3 layered NN
         if flag == "predict":
             inputs = layers.Input(shape=(self.num_states))
             out = layers.Dense(256, activation="relu", use_bias=True)(inputs)
             out = layers.Dense(256, activation="tanh", use_bias=True)(out)
-            outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=last_init)(out)
+            outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=self.last_init)(out)
 
             max_num = np.array([self.first_low, self.first_high, self.sec_low, self.sec_low])
             outputs = outputs * np.amax(max_num)
@@ -252,31 +251,30 @@ class DDPG_robo():
         elif flag == "defender" or flag == "defender_predict":
             leaky_relu = layers.LeakyReLU(alpha=0.3)
             inputs = layers.Input(shape=(self.num_states))
-            out = layers.Dense(256, activation=leaky_relu, use_bias=True)(inputs)
-            out = layers.Dense(256, activation=leaky_relu, use_bias=True)(out)
-            outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=last_init)(out)
+            out = layers.Dense(512, activation=leaky_relu, use_bias=True)(inputs)
+            out = layers.Dense(512, activation=leaky_relu, use_bias=True)(out)
+            outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=self.last_init)(out)
 
         model = tf.keras.Model(inputs, outputs)
         return model
 
     def get_critic(self):
         # Le Cun weight initializer
-        last_init = tf.keras.initializers.LecunNormal()
         leaky_relu = layers.LeakyReLU(alpha=0.3)
         # State as input
         state_input = layers.Input(shape=(self.num_states))
         state_out = layers.Dense(64, activation=leaky_relu, use_bias=True)(state_input)
-        state_out = layers.Dense(64, activation="tanh", use_bias=True, kernel_initializer=last_init)(state_out)
+        state_out = layers.Dense(64, activation="relu", use_bias=True, kernel_initializer=self.last_init)(state_out)
 
         # Action as input
         action_input = layers.Input(shape=(num_actions))
         action_out = layers.Dense(64, activation=leaky_relu, use_bias=True)(action_input)
-        action_out = layers.Dense(64, activation="tanh", use_bias=True, kernel_initializer=last_init)(action_input)
+        action_out = layers.Dense(64, activation="relu", use_bias=True, kernel_initializer=self.last_init)(action_input)
 
         # Both are passed through seperate layer before concatenating
         concat = layers.Concatenate(axis=1)([state_out, action_out])
         out = layers.Dense(256, activation=leaky_relu, use_bias=True)(concat)
-        out = layers.Dense(256, activation="tanh", use_bias=True, kernel_initializer=last_init)(out)
+        out = layers.Dense(256, activation="relu", use_bias=True, kernel_initializer=self.last_init)(out)
         outputs = layers.Dense(1)(out)
 
         # Outputs single value for give state-action
@@ -296,7 +294,7 @@ class DDPG_robo():
             noise = noise_object()
         else:
             noise = 0.
-        
+
         # Adding noise to action
         sampled_actions = sampled_actions.numpy() + noise
 

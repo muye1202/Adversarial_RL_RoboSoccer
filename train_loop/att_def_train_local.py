@@ -4,7 +4,6 @@ sys.path.insert(0, '/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent')
 import numpy as np
 import tensorflow as tf
 from keras import layers
-import matplotlib.pyplot as plt
 from enum import Enum, auto
 from rl.ddpg_robo_soccer import OUActionNoise, DDPG_robo
 
@@ -12,13 +11,13 @@ from rl.ddpg_robo_soccer import OUActionNoise, DDPG_robo
 """
 Training loop for the RL network.
 """
-std_dev = 0.05
+std_dev = 0.1
 ou_noise = OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev) * np.ones(1))
 
 total_episodes = 5000
 # Used to update target networks
 tau = 0.002
-gamma = 0.8
+gamma = 0.9
 
 # To store reward history of each episode
 ep_reward_list = []
@@ -65,7 +64,6 @@ class DefenderEnv():
         self.attacker_pos = attacker_pos
         self.defender_pos = defender_pos
 
-        self.count_steps += 1
         ### DEFENDER REWARDS ###
         # For each step without being scored, reward = +1
         # Taking control over the ball, reward = +10
@@ -74,49 +72,51 @@ class DefenderEnv():
         # check whether the robot moves towards
         # the goal in the past episode:
         if self.is_scored():
-            rewards -= 1000.0
+            rewards -= 1500.0
             done = True
 
         # stop the defender when it runs pass the attacker
         if not self.is_scored() and self.is_out_of_range():
-            rewards = -800.0
+            rewards = -1300.0
             done = True
             
         elif self.defender_pos[0] < self.attacker_pos[0]-0.5:
             done = True
             if self.dist_between_players() > 1.6:
-                rewards -= 20.0
+                rewards -= 100.0
 
         if self.dist_between_players() <= 0.8 and self.defender_pos[0] >= self.attacker_pos[0]:
-            rewards += 100.0
+            rewards += 500.0
             done = True
 
         if self.dist_between_players() <= 0.8 and self.player_facing() <= 15.0:
-            rewards += 10.0 * 15.0 / (self.player_facing() + 1)
+            rewards += 50.0 * 15.0 / (self.player_facing() + 1)
 
-        elif self.dist_between_players() <= 1.6 and self.player_facing() <= 25.0:
-            rewards += 5 * 25.0 / self.player_facing()
+        elif self.dist_between_players() <= 1.6 and self.player_facing() <= 40.0:
+            rewards += 20 * 25.0 / self.player_facing()
             
         elif self.dist_between_players() <= 1.6 and self.player_facing() > 100.0:
-            rewards -= 5.0
+            rewards -= 100.0
 
         # if the player chases the opponent directly
         # it will obtain the max rewards
         if self.chasing_score() <= 10.0:
-            rewards += 50.0 # 50*10.0 / (self.chasing_score() + 1)
+            rewards += 5*100.0 / (self.chasing_score() + 1)
 
-        elif self.chasing_score() <= 20.0:
-            rewards += 20.0 # 20*5.0 / (self.chasing_score() + 1)
+        elif self.chasing_score() <= 40.0:
+            rewards += 15*50.0 / (self.chasing_score() + 1)
 
-        elif self.chasing_score() > 20.0:
-            rewards -= 0.1*self.chasing_score()
+        elif self.chasing_score() > 40.0:
+            rewards -= 0.5*self.chasing_score()
 
         if self.ball_to_goal_dist() <= 2.0:
-            rewards -= 15.0
+            rewards -= 50.0
 
         self.last_dist_players = self.dist_between_players()
         extra_states = np.array([self.dist_between_players(), self.player_facing(), self.angle_between()])
 
+        # print("rewards: " + str(rewards))
+        
         return rewards, done, extra_states
 
     def dist_to_start(self):
@@ -269,7 +269,7 @@ class Train():
         self.prev_ball_pos = np.array([0.2, 0.0])
         self.attacker_actor = attacker_actor()
         self.attacker_actor.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/successful_model/one_attacker/attacker_actor_2000.h5")
-        train_log_dir = "/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/train_log/modified"
+        train_log_dir = "/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/train_log/local"
         self.train_summary_writer = tf.summary.create_file_writer(train_log_dir)
         
         # defender params
@@ -282,7 +282,7 @@ class Train():
                                                                                         #  player_facing, angle_between, ball_x, ball_y]
         self.extra_states = np.array([4.0, 0.0, 0.0])
         self.defender_actor = DDPG_robo(first_low=40., first_high=70., sec_low=-100, sec_high=100, num_states=8, flag="defender")
-        
+
         # DEBUG:
         self.rewards_list = []
         self.episodes_axis = []
@@ -388,7 +388,7 @@ class Train():
             self.defender_prev_state = np.array([2.0, def_y, def_init_facing, init_dist_between_players, init_player_facing, 
                                                  init_player_facing, 0.2, 0.0])
             
-            # self.defender_prev_state /= np.linalg.norm(self.defender_prev_state)
+            self.defender_prev_state /= np.linalg.norm(self.defender_prev_state)
             normal_pre_state = self.defender_prev_state
             ep_reward_list = []
 
@@ -450,13 +450,13 @@ class Train():
 
                 # convert defender heading to radians
                 normal_state = defender_input
-                # # normalize input
-                # if np.linalg.norm(defender_input) > 0 and np.linalg.norm(normal_pre_state) > 0:
-                #     normal_state = defender_input / np.linalg.norm(defender_input)
-                #     normal_pre_state = normal_pre_state / np.linalg.norm(normal_pre_state)
+                # normalize input
+                if np.linalg.norm(defender_input) > 0 and np.linalg.norm(normal_pre_state) > 0:
+                    normal_state = defender_input / np.linalg.norm(defender_input)
+                    normal_pre_state = normal_pre_state / np.linalg.norm(normal_pre_state)
 
                 # 3-step TD Target
-                self.defender_actor.buffer.record((normal_pre_state, defender_action, rewards, normal_state))
+                self.defender_actor.buffer.record((normal_pre_state, defender_action, rewards/100, normal_state))
                 if (count % 3 == 0 and count > 3) or done:
                     self.defender_actor.buffer.learn(self.defender_actor.target_actor, self.defender_actor.target_critic,
                                 self.defender_actor.actor_model, self.defender_actor.critic_model,
@@ -468,14 +468,14 @@ class Train():
                 normal_pre_state = normal_state
                 ep_reward_list.append(rewards)
                 
-                # DEBUG: collect attacker defender position
-                self.x_pos.append(self.defender_pos[0])
-                self.y_pos.append(self.defender_pos[1])
-                self.att_xpos.append(self.attacker_pos[0])
-                self.att_ypos.append(self.attacker_pos[1])
-                self.theta_list.append(self.defender_pos[2])
-                t_axis.append(count)
-                
+                # # DEBUG: collect attacker defender position
+                # self.x_pos.append(self.defender_pos[0])
+                # self.y_pos.append(self.defender_pos[1])
+                # self.att_xpos.append(self.attacker_pos[0])
+                # self.att_ypos.append(self.attacker_pos[1])
+                # self.theta_list.append(self.defender_pos[2])
+                # t_axis.append(count)
+
                 if done:
                     break
 

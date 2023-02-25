@@ -68,53 +68,56 @@ class DefenderEnv():
         self.attacker_pos = attacker_pos
         self.defender_pos = defender_pos
 
-        self.count_steps += 1
         ### DEFENDER REWARDS ###
+        # For each step without being scored, reward = +1
+        # Taking control over the ball, reward = +10
+        # Blocking shooting route, reward = +1
+
         # check whether the robot moves towards
         # the goal in the past episode:
         if self.is_scored():
-            rewards -= 3000.0
+            rewards -= 1500.0
             done = True
 
         # stop the defender when it runs pass the attacker
         if not self.is_scored() and self.is_out_of_range():
-            rewards = -1500.0
+            rewards = -1300.0
             done = True
-
+            
         elif self.defender_pos[0] < self.attacker_pos[0]-0.5:
             done = True
             if self.dist_between_players() > 1.6:
-                rewards -= 200.0
+                rewards -= 100.0
 
         if self.dist_between_players() <= 0.8 and self.defender_pos[0] >= self.attacker_pos[0]:
-            rewards += 1000.0
+            rewards += 500.0
             done = True
 
         if self.dist_between_players() <= 0.8 and self.player_facing() <= 15.0:
-            rewards += 500.0 * 15.0 / (self.player_facing() + 1)
+            rewards += 50.0 * 15.0 / (self.player_facing() + 1)
 
-        elif self.dist_between_players() <= 1.6 and self.player_facing() <= 25.0:
-            rewards += 200 * 25.0 / self.player_facing()
-
-        elif self.dist_between_players() <= 1.6 and self.player_facing() > 100.0:
-            rewards -= 50.0
+        elif self.dist_between_players() <= 2.4 and self.player_facing() <= 40.0:
+            rewards += 20 * 25.0 / self.player_facing()
+            
+        elif self.dist_between_players() <= 2.4 and self.player_facing() > 100.0:
+            rewards -= 100.0
 
         # if the player chases the opponent directly
         # it will obtain the max rewards
         if self.chasing_score() <= 10.0:
-            rewards += 50*10.0 / (self.chasing_score() + 1)
+            rewards += 5*100.0 / (self.chasing_score() + 1)
 
-        elif self.chasing_score() <= 30.0:
-            rewards += 20*5.0 / (self.chasing_score() + 1)
+        elif self.chasing_score() <= 40.0:
+            rewards += 15*50.0 / (self.chasing_score() + 1)
 
-        elif self.chasing_score() > 30.0:
-            rewards -= 0.2*self.chasing_score()
+        elif self.chasing_score() > 40.0:
+            rewards -= 0.5*self.chasing_score()
 
         if self.ball_to_goal_dist() <= 2.0:
-            rewards -= 150.0
+            rewards -= 50.0
 
         self.last_dist_players = self.dist_between_players()
-        extra_states = np.array([self.dist_between_players(), self.angle_between()])
+        extra_states = np.array([self.dist_between_players(), math.radians(self.player_facing()), math.radians(self.angle_between())])
 
         return rewards, done, extra_states
 
@@ -275,10 +278,10 @@ class Train():
         self.def_velx = 0.0
         self.def_vely = 0.0
         self.defender_pos = np.array([2.0, 0.0, 0.0])
-        self.defender_prev_state = np.array([2.0, 0.0, 0.0, 4.0, 0.0, 0.2, 0.0])   # [x, y, theta, dist_between_players, 
+        self.defender_prev_state = np.array([2.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.2, 0.0])   # [x, y, theta, dist_between_players, 
                                                                                    # angle_between, ball_x, ball_y]
-        self.extra_states = np.array([4.0, 0.0])
-        self.defender_actor = DDPG_robo(first_low=40., first_high=70., sec_low=-100, sec_high=100, num_states=7, flag="defender")
+        self.extra_states = np.array([4.0, 0.0, 0.0])
+        self.defender_actor = DDPG_robo(first_low=40., first_high=70., sec_low=-100, sec_high=100, num_states=8, flag="defender")
 
         # DEBUG:
         self.rewards_list = []
@@ -289,7 +292,7 @@ class Train():
         self.att_xpos = []
         self.att_ypos = []
         
-        train_log_dir = "/home/muye/rl_soccer/train_log/modified"
+        train_log_dir = "/home/muye/rl_soccer/train_log/modified/8_states/"
         self.train_summary_writer = tf.summary.create_file_writer(train_log_dir)
         
     def player_to_ball_dist(self):
@@ -385,7 +388,7 @@ class Train():
             self.defender_pos = np.array([2.0, def_y, def_init_facing])
             init_dist_between_players = math.sqrt((self.attacker_pos[0]-2.0)**2 + (self.attacker_pos[1])**2)
             init_player_facing = math.atan2(self.attacker_pos[1], 4.0)
-            self.defender_prev_state = np.array([2.0, def_y, def_init_facing, init_dist_between_players,
+            self.defender_prev_state = np.array([2.0, def_y, def_init_facing, init_dist_between_players, init_player_facing,
                                                  init_player_facing, 0.2, 0.0])
 
             self.defender_prev_state /= np.linalg.norm(self.defender_prev_state)
@@ -456,7 +459,7 @@ class Train():
                     normal_pre_state = normal_pre_state / np.linalg.norm(normal_pre_state)
 
                 # 3-step TD Target
-                self.defender_actor.buffer.record((normal_pre_state, defender_action, rewards, normal_state))
+                self.defender_actor.buffer.record((normal_pre_state, defender_action, rewards/10, normal_state))
                 if (count % 3 == 0 and count > 3) or done:
                     self.defender_actor.buffer.learn(self.defender_actor.target_actor, self.defender_actor.target_critic,
                                 self.defender_actor.actor_model, self.defender_actor.critic_model,
@@ -486,8 +489,10 @@ class Train():
             
             with self.train_summary_writer.as_default():
                 tf.summary.scalar('rewards', avg_reward, step=episodes)
-                tf.summary.scalar('actor_loss', self.defender_actor.buffer.actor_loss, step=episodes)
-                tf.summary.scalar('actor_gradient_norm_sum_of_all_states', self.defender_actor.buffer.actor_grad, step=episodes)
+                tf.summary.scalar('actor_score', self.defender_actor.buffer.actor_loss, step=episodes)
+                tf.summary.scalar('critic_loss', self.defender_actor.buffer.critic_loss, step=episodes)
+                tf.summary.scalar('actor_gradient_norm', self.defender_actor.buffer.actor_grad, step=episodes)
+                tf.summary.scalar('critic_gradient_norm', self.defender_actor.buffer.critic_grad, step=episodes)
 
             if episodes % 1000 == 0 and episodes > 0:
 
@@ -503,11 +508,6 @@ class Train():
                 self.defender_actor.target_critic.save_weights("/home/muye/rl_soccer/trained_model/one_vs_one/defender_target_critic_checkpt_alien.h5")
 
         self.defender_actor.actor_model.save_weights('/home/muye/rl_soccer/trained_model/one_vs_one/defender_actor_alien.h5')
-        fig = plt.figure()
-        plt.plot(self.episodes_axis, self.rewards_list, '-b', label="rewards")
-        plt.legend()
-        plt.savefig("alien_results.png")
-        plt.close(fig)
     
 if __name__ == "__main__":
     train_loop = Train()
