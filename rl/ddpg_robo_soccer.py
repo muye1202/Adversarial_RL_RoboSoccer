@@ -207,8 +207,8 @@ class DDPG_robo():
         DDPG network for robot soccer.
         """
         # Learning rate for actor-critic models
-        critic_lr = 0.003
-        actor_lr = 0.001
+        critic_lr = 1.0
+        actor_lr = 1.0
 
         self.num_states = num_states
         self.flag = flag
@@ -216,8 +216,8 @@ class DDPG_robo():
         self.first_high = first_high
         self.sec_low = sec_low
         self.sec_high = sec_high
-        self.critic_optimizer = tf.keras.optimizers.Adadelta(critic_lr, clipnorm=1.2)
-        self.actor_optimizer = tf.keras.optimizers.Adadelta(actor_lr, clipnorm=1.2)
+        self.critic_optimizer = tf.keras.optimizers.Adadelta(critic_lr, clipnorm=3.0)
+        self.actor_optimizer = tf.keras.optimizers.Adadelta(actor_lr, clipnorm=3.0)
         self.last_init = tf.keras.initializers.GlorotUniform()
         self.actor_model = self.get_actor(self.flag)   # is this training continuing on last checkpoint    
         self.critic_model = self.get_critic()
@@ -274,7 +274,7 @@ class DDPG_robo():
         # Both are passed through seperate layer before concatenating
         concat = layers.Concatenate(axis=1)([state_out, action_out])
         out = layers.Dense(256, activation=leaky_relu, use_bias=True)(concat)
-        out = layers.Dense(256, activation="relu", use_bias=True, kernel_initializer=self.last_init)(out)
+        out = layers.Dense(256, activation="tanh", use_bias=True, kernel_initializer=self.last_init)(out)
         outputs = layers.Dense(1)(out)
 
         # Outputs single value for give state-action

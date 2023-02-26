@@ -112,7 +112,9 @@ class Defender_Evaluate(Node):
         of the robot and the ball.
         """
         self.new_pos.x = -2.0
-        self.new_pos.y = np.random.uniform(low=-3.0, high=3.0)
+        att_y = np.linspace(start=-3.0, stop=3.0, num=10)
+        indx = np.random.randint(low=0, high=10)
+        self.new_pos.y = att_y[indx]
         self.reset_pub.publish(self.new_pos)
         
     def is_scored(self):
@@ -186,6 +188,12 @@ class Defender_Evaluate(Node):
             angle = math.degrees(math.atan2(self.robot_pos.y - self.defender_pos.y, self.robot_pos.x - self.defender_pos.x))
             player_facing = math.radians(self.player_facing(angle))
             defender_pos = np.array([self.defender_pos.x, self.defender_pos.y, self.defender_pos.theta])
+            
+            if 0 < defender_pos[2] < 3.14:
+                pass
+            else:
+                defender_pos[2] = math.radians(180 + abs(math.degrees(defender_pos[2])))
+
             defender_input = np.concatenate((defender_pos, np.array([dist_to_ball, player_facing, math.radians(angle), self.ball_pos.x, self.ball_pos.y])))
             # defender_input = defender_input / np.linalg.norm(defender_input)
             

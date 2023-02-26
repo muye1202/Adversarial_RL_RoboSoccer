@@ -372,8 +372,8 @@ class Train():
             t_axis = []
             count = 0
             ######### ATTACKER INIT #########
-            att_x = -2.0
-            if episodes % 2 == 0 and episodes > 0:
+            att_x = -2.5
+            if episodes % 50 == 0 and episodes > 0:
                 attacker_start_seed = np.random.randint(low=0, high=10)
                 att_y = attacker_start_pos[attacker_start_seed]
 
@@ -391,7 +391,7 @@ class Train():
             self.defender_prev_state = np.array([2.0, def_y, def_init_facing, init_dist_between_players, init_player_facing,
                                                  init_player_facing, 0.2, 0.0])
 
-            self.defender_prev_state /= np.linalg.norm(self.defender_prev_state)
+            # self.defender_prev_state /= np.linalg.norm(self.defender_prev_state)
             normal_pre_state = self.defender_prev_state
             ep_reward_list = []
 
@@ -453,13 +453,13 @@ class Train():
 
                 # convert defender heading to radians
                 normal_state = defender_input
-                # normalize input
-                if np.linalg.norm(defender_input) > 0 and np.linalg.norm(normal_pre_state) > 0:
-                    normal_state = defender_input / np.linalg.norm(defender_input)
-                    normal_pre_state = normal_pre_state / np.linalg.norm(normal_pre_state)
+                # # normalize input
+                # if np.linalg.norm(defender_input) > 0 and np.linalg.norm(normal_pre_state) > 0:
+                #     normal_state = defender_input / np.linalg.norm(defender_input)
+                #     normal_pre_state = normal_pre_state / np.linalg.norm(normal_pre_state)
 
                 # 3-step TD Target
-                self.defender_actor.buffer.record((normal_pre_state, defender_action, rewards/10, normal_state))
+                self.defender_actor.buffer.record((normal_pre_state, defender_action, rewards/100, normal_state))
                 if (count % 3 == 0 and count > 3) or done:
                     self.defender_actor.buffer.learn(self.defender_actor.target_actor, self.defender_actor.target_critic,
                                 self.defender_actor.actor_model, self.defender_actor.critic_model,
