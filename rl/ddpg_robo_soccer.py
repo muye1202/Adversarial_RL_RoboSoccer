@@ -134,13 +134,18 @@ class Buffer():
         
         # monitor critic's gradient
         critic_grad = tape.gradient(critic_loss, critic_model.trainable_variables)
+        clipped_grad = self.gradient_clipping(critic_grad, 5.0)
+        
+        # calculate critic grad norm
         if len(critic_grad) > 0:
             self.critic_grad = 0.0
-            for i in range(len(critic_grad)):
-                self.critic_grad += tf.norm(critic_grad[i])
-
+            for i in range(len(clipped_grad)):
+                self.critic_grad += tf.norm(clipped_grad[i])
+                
+            self.critic_grad /= len(clipped_grad)
+        
         critic_optimizer.apply_gradients(
-            zip(critic_grad, critic_model.trainable_variables)
+            zip(clipped_grad, critic_model.trainable_variables)
         )
 
         with tf.GradientTape() as tape:
@@ -160,10 +165,25 @@ class Buffer():
             self.actor_grad = 0.0
             for i in range(len(actor_grad)):
                 self.actor_grad += tf.norm(actor_grad[i])
+                
+            self.actor_grad /= len(actor_grad)
 
         actor_optimizer.apply_gradients(
             zip(actor_grad, actor_model.trainable_variables)
         )
+
+    def gradient_clipping(self, grad, clip_norm):
+        # apply gradient clipping
+        clipped_grad_and_var = []
+        for i in range(len(grad)):
+            # clip gradient for each input variable
+            if len(grad[i].shape) > 1:
+                clipped = tf.clip_by_norm(t=grad[i], clip_norm=clip_norm, axes=1)
+            else:
+                clipped = tf.clip_by_norm(t=grad[i], clip_norm=clip_norm, axes=0)
+            clipped_grad_and_var.append(clipped)
+            
+        return clipped_grad_and_var
 
     # We compute the loss and update parameters
     def learn(self, 
@@ -216,9 +236,10 @@ class DDPG_robo():
         self.first_high = first_high
         self.sec_low = sec_low
         self.sec_high = sec_high
-        self.critic_optimizer = tf.keras.optimizers.Adadelta(critic_lr, clipnorm=1.0)
+        self.critic_optimizer = tf.keras.optimizers.Adadelta(critic_lr)
         self.actor_optimizer = tf.keras.optimizers.Adadelta(actor_lr)
-        self.last_init = tf.keras.initializers.GlorotUniform(seed=120209)
+        self.tanh_init = tf.keras.initializers.GlorotNormal(seed=120209)
+        self.relu_init = tf.keras.initializers.HeNormal(seed=120209)
         self.actor_model = self.get_actor(self.flag)   # is this training continuing on last checkpoint    
         self.critic_model = self.get_critic()
         self.target_actor = self.get_actor(self.flag)
@@ -243,7 +264,7 @@ class DDPG_robo():
             inputs = layers.Input(shape=(self.num_states))
             out = layers.Dense(256, activation="relu", use_bias=True)(inputs)
             out = layers.Dense(256, activation="tanh", use_bias=True)(out)
-            outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=self.last_init)(out)
+            outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=self.tanh_init)(out)
 
             max_num = np.array([self.first_low, self.first_high, self.sec_low, self.sec_low])
             outputs = outputs * np.amax(max_num)
@@ -256,34 +277,30 @@ class DDPG_robo():
             out = layers.Dense(256, activation=leaky_relu, use_bias=True)(out)
             out = layers.Dense(256, activation="tanh", use_bias=True)(out)
             out = layers.Dense(256, activation="tanh", use_bias=True)(out)
-            outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=self.last_init)(out)
-
-        # leaky_relu = layers.LeakyReLU(alpha=0.3)
-        # inputs = layers.Input(shape=(self.num_states))
-        # out = layers.Dense(512, activation=leaky_relu, use_bias=True)(inputs)
-        # out = layers.Dense(512, activation=leaky_relu, use_bias=True)(out)
-        # outputs = layers.Dense(num_actions, activation="tanh", use_bias=True)(out)
+            outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=self.tanh_init)(out)
 
         model = tf.keras.Model(inputs, outputs)
         return model
 
     def get_critic(self):
-        # Le Cun weight initializer
         leaky_relu = layers.LeakyReLU(alpha=0.3)
         # State as input
         state_input = layers.Input(shape=(self.num_states))
+        state_input = layers.LayerNormalization(axis=1)(state_input)
         state_out = layers.Dense(128, activation=leaky_relu, use_bias=True)(state_input)
-        state_out = layers.Dense(128, activation=leaky_relu, use_bias=True, kernel_initializer=self.last_init)(state_out)
+        state_out = layers.Dense(128, activation=leaky_relu, use_bias=True, kernel_initializer=self.relu_init)(state_out)
 
         # Action as input
         action_input = layers.Input(shape=(num_actions))
+        action_input = layers.LayerNormalization(axis=1)(action_input)
         action_out = layers.Dense(128, activation=leaky_relu, use_bias=True)(action_input)
-        action_out = layers.Dense(128, activation=leaky_relu, use_bias=True, kernel_initializer=self.last_init)(action_input)
+        action_out = layers.Dense(128, activation=leaky_relu, use_bias=True, kernel_initializer=self.relu_init)(action_input)
 
         # Both are passed through seperate layer before concatenating
         concat = layers.Concatenate(axis=1)([state_out, action_out])
+        # concat = layers.LayerNormalization(axis=1)(concat)
         out = layers.Dense(256, activation=leaky_relu, use_bias=True)(concat)
-        out = layers.Dense(256, activation="tanh", use_bias=True, kernel_initializer=self.last_init)(out)
+        out = layers.Dense(256, activation=leaky_relu, use_bias=True, kernel_initializer=self.relu_init)(out)
         outputs = layers.Dense(1)(out)
 
         # Outputs single value for give state-action

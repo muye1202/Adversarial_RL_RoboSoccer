@@ -62,7 +62,7 @@ class Defender_Evaluate(Node):
         self.actor_model = DDPG_robo(0., 0., 0., 0., num_states=2, flag="predict")
         self.actor_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_attacker/attacker_actor.h5")
         self.defender_model = DDPG_robo(0.,0.,0.,0., num_states=8, flag="defender_predict")
-        self.defender_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/successful_model/1vs1/aggressive_defender.h5", by_name=True)
+        self.defender_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/Feb_26_trained_alien.h5", by_name=True)
 
     def defender_callback(self, def_pos: Pose2D):
         self.defender_pos = def_pos
@@ -199,10 +199,10 @@ class Defender_Evaluate(Node):
             if 0 < defender_pos[2] < 3.14:
                 pass
             else:
-                defender_pos[2] = math.radians(180 - abs(math.degrees(defender_pos[2])))
+                defender_pos[2] = math.radians(180 + abs(math.degrees(defender_pos[2])))
 
             defender_input = np.concatenate((defender_pos, np.array([dist_to_ball, player_facing, angle, self.ball_pos.x, self.ball_pos.y])))
-            #defender_input = defender_input / np.linalg.norm(defender_input)
+            # defender_input = defender_input / np.linalg.norm(defender_input)
             
             def_state = tf.expand_dims(tf.convert_to_tensor(defender_input), 0)
             defender_action = self.defender_model.actor_model.predict(def_state, verbose=0)

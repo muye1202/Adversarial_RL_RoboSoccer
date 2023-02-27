@@ -461,7 +461,7 @@ class Train():
                 # 3-step TD Target
                 # normalize the action
                 defender_action[0] = defender_action[0]/100.0
-                defender_action[1] = defender_action[1]/180.0
+                defender_action[1] = np.pi*defender_action[1]/180.0
                 self.defender_actor.buffer.record((normal_pre_state, defender_action, rewards/100, normal_state))
                 if (count % 3 == 0 and count > 3) or done:
                     self.defender_actor.buffer.learn(self.defender_actor.target_actor, self.defender_actor.target_critic,
