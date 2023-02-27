@@ -207,8 +207,8 @@ class DDPG_robo():
         DDPG network for robot soccer.
         """
         # Learning rate for actor-critic models
-        critic_lr = 1.0
-        actor_lr = 1.0
+        critic_lr = 0.1
+        actor_lr = 0.1
 
         self.num_states = num_states
         self.flag = flag
@@ -218,7 +218,7 @@ class DDPG_robo():
         self.sec_high = sec_high
         self.critic_optimizer = tf.keras.optimizers.Adadelta(critic_lr, clipnorm=3.0)
         self.actor_optimizer = tf.keras.optimizers.Adadelta(actor_lr, clipnorm=3.0)
-        self.last_init = tf.keras.initializers.GlorotUniform()
+        self.last_init = tf.keras.initializers.GlorotUniform(seed=120209)
         self.actor_model = self.get_actor(self.flag)   # is this training continuing on last checkpoint    
         self.critic_model = self.get_critic()
         self.target_actor = self.get_actor(self.flag)
@@ -264,17 +264,17 @@ class DDPG_robo():
         # State as input
         state_input = layers.Input(shape=(self.num_states))
         state_out = layers.Dense(64, activation=leaky_relu, use_bias=True)(state_input)
-        state_out = layers.Dense(64, activation="relu", use_bias=True, kernel_initializer=self.last_init)(state_out)
+        state_out = layers.Dense(64, activation=leaky_relu, use_bias=True, kernel_initializer=self.last_init)(state_out)
 
         # Action as input
         action_input = layers.Input(shape=(num_actions))
         action_out = layers.Dense(64, activation=leaky_relu, use_bias=True)(action_input)
-        action_out = layers.Dense(64, activation="relu", use_bias=True, kernel_initializer=self.last_init)(action_input)
+        action_out = layers.Dense(64, activation=leaky_relu, use_bias=True, kernel_initializer=self.last_init)(action_input)
 
         # Both are passed through seperate layer before concatenating
         concat = layers.Concatenate(axis=1)([state_out, action_out])
         out = layers.Dense(256, activation=leaky_relu, use_bias=True)(concat)
-        out = layers.Dense(256, activation="tanh", use_bias=True, kernel_initializer=self.last_init)(out)
+        out = layers.Dense(256, activation=leaky_relu, use_bias=True, kernel_initializer=self.last_init)(out)
         outputs = layers.Dense(1)(out)
 
         # Outputs single value for give state-action
