@@ -93,13 +93,13 @@ class DefenderEnv():
             rewards += 500.0
             done = True
 
-        if self.dist_between_players() <= 0.8 and self.player_facing() <= 15.0:
+        if self.dist_between_players() <= 3.2 and self.player_facing() <= 15.0:
             rewards += 50.0 * 15.0 / (self.player_facing() + 1)
 
-        elif self.dist_between_players() <= 2.4 and self.player_facing() <= 40.0:
+        elif self.dist_between_players() <= 3.2 and self.player_facing() <= 40.0:
             rewards += 20 * 25.0 / self.player_facing()
             
-        elif self.dist_between_players() <= 2.4 and self.player_facing() > 100.0:
+        elif self.dist_between_players() <= 1.6 and self.player_facing() > 100.0:
             rewards -= 100.0
 
         # if the player chases the opponent directly
@@ -117,7 +117,7 @@ class DefenderEnv():
             rewards -= 50.0
 
         self.last_dist_players = self.dist_between_players()
-        extra_states = np.array([self.dist_between_players(), math.radians(self.player_facing()), math.radians(self.angle_between())])
+        extra_states = np.array([self.dist_between_players(), self.player_facing(), self.angle_between()])
 
         return rewards, done, extra_states
 
@@ -281,7 +281,7 @@ class Train():
         self.defender_prev_state = np.array([2.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.2, 0.0])   # [x, y, theta, dist_between_players, 
                                                                                    # angle_between, ball_x, ball_y]
         self.extra_states = np.array([4.0, 0.0, 0.0])
-        self.defender_actor = DDPG_robo(first_low=40., first_high=70., sec_low=-100, sec_high=100, num_states=8, flag="defender")
+        self.defender_actor = DDPG_robo(first_low=20., first_high=70., sec_low=-100, sec_high=100, num_states=8, flag="defender")
 
         # DEBUG:
         self.rewards_list = []
@@ -292,7 +292,7 @@ class Train():
         self.att_xpos = []
         self.att_ypos = []
         
-        train_log_dir = "/home/muye/rl_soccer/train_log/modified/8_states/"
+        train_log_dir = "/home/muye/rl_soccer/train_log/Feb_26_alien/"
         self.train_summary_writer = tf.summary.create_file_writer(train_log_dir)
         
     def player_to_ball_dist(self):
@@ -373,7 +373,7 @@ class Train():
             count = 0
             ######### ATTACKER INIT #########
             att_x = -2.5
-            if episodes % 50 == 0 and episodes > 0:
+            if episodes % 2 == 0 and episodes > 0:
                 attacker_start_seed = np.random.randint(low=0, high=10)
                 att_y = attacker_start_pos[attacker_start_seed]
 
@@ -453,12 +453,15 @@ class Train():
 
                 # convert defender heading to radians
                 normal_state = defender_input
-                # # normalize input
-                # if np.linalg.norm(defender_input) > 0 and np.linalg.norm(normal_pre_state) > 0:
-                #     normal_state = defender_input / np.linalg.norm(defender_input)
-                #     normal_pre_state = normal_pre_state / np.linalg.norm(normal_pre_state)
+                # normalize input
+                if np.linalg.norm(defender_input) > 0 and np.linalg.norm(normal_pre_state) > 0:
+                    normal_state = defender_input / np.linalg.norm(defender_input)
+                    normal_pre_state = normal_pre_state / np.linalg.norm(normal_pre_state)
 
                 # 3-step TD Target
+                # normalize the action
+                defender_action[0] = defender_action[0]/100.0
+                defender_action[1] = defender_action[1]/180.0
                 self.defender_actor.buffer.record((normal_pre_state, defender_action, rewards/100, normal_state))
                 if (count % 3 == 0 and count > 3) or done:
                     self.defender_actor.buffer.learn(self.defender_actor.target_actor, self.defender_actor.target_critic,
@@ -471,13 +474,13 @@ class Train():
                 normal_pre_state = normal_state
                 ep_reward_list.append(rewards)
 
-                # DEBUG: plot defender position
-                self.x_pos.append(self.defender_pos[0])
-                self.y_pos.append(self.defender_pos[1])
-                self.att_xpos.append(self.attacker_pos[0])
-                self.att_ypos.append(self.attacker_pos[1])
-                self.theta_list.append(self.defender_pos[2])
-                t_axis.append(count)
+                # # DEBUG: plot defender position
+                # self.x_pos.append(self.defender_pos[0])
+                # self.y_pos.append(self.defender_pos[1])
+                # self.att_xpos.append(self.attacker_pos[0])
+                # self.att_ypos.append(self.attacker_pos[1])
+                # self.theta_list.append(self.defender_pos[2])
+                # t_axis.append(count)
 
                 if done:
                     break
