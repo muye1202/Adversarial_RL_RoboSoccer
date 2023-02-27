@@ -217,7 +217,7 @@ class DDPG_robo():
         self.sec_low = sec_low
         self.sec_high = sec_high
         self.critic_optimizer = tf.keras.optimizers.Adadelta(critic_lr, clipnorm=1.0)
-        self.actor_optimizer = tf.keras.optimizers.Adadelta(actor_lr)
+        self.actor_optimizer = tf.keras.optimizers.Adadelta(actor_lr, clipnorm=1.0)
         self.last_init = tf.keras.initializers.GlorotUniform(seed=120209)
         self.actor_model = self.get_actor(self.flag)   # is this training continuing on last checkpoint    
         self.critic_model = self.get_critic()
@@ -248,7 +248,14 @@ class DDPG_robo():
             max_num = np.array([self.first_low, self.first_high, self.sec_low, self.sec_low])
             outputs = outputs * np.amax(max_num)
 
-        elif flag == "defender" or flag == "defender_predict":
+        elif flag == "defender":
+            leaky_relu = layers.LeakyReLU(alpha=0.3)
+            inputs = layers.Input(shape=(self.num_states))
+            out = layers.Dense(512, activation=leaky_relu, use_bias=True)(inputs)
+            out = layers.Dense(512, activation=leaky_relu, use_bias=True)(out)
+            outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=self.last_init)(out)
+            
+        elif flag == "defender_predict":
             leaky_relu = layers.LeakyReLU(alpha=0.3)
             inputs = layers.Input(shape=(self.num_states))
             out = layers.Dense(256, activation=leaky_relu, use_bias=True)(inputs)
@@ -257,12 +264,6 @@ class DDPG_robo():
             out = layers.Dense(256, activation="tanh", use_bias=True)(out)
             out = layers.Dense(256, activation="tanh", use_bias=True)(out)
             outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=self.last_init)(out)
-
-        # leaky_relu = layers.LeakyReLU(alpha=0.3)
-        # inputs = layers.Input(shape=(self.num_states))
-        # out = layers.Dense(512, activation=leaky_relu, use_bias=True)(inputs)
-        # out = layers.Dense(512, activation=leaky_relu, use_bias=True)(out)
-        # outputs = layers.Dense(num_actions, activation="tanh", use_bias=True)(out)
 
         model = tf.keras.Model(inputs, outputs)
         return model
