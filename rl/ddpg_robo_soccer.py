@@ -283,20 +283,22 @@ class DDPG_robo():
         return model
 
     def get_critic(self):
-        # Le Cun weight initializer
         leaky_relu = layers.LeakyReLU(alpha=0.3)
         # State as input
         state_input = layers.Input(shape=(self.num_states))
+        state_input = layers.LayerNormalization(axis=1)(state_input)
         state_out = layers.Dense(128, activation=leaky_relu, use_bias=True)(state_input)
         state_out = layers.Dense(128, activation=leaky_relu, use_bias=True, kernel_initializer=self.relu_init)(state_out)
 
         # Action as input
         action_input = layers.Input(shape=(num_actions))
+        action_input = layers.LayerNormalization(axis=1)(action_input)
         action_out = layers.Dense(128, activation=leaky_relu, use_bias=True)(action_input)
         action_out = layers.Dense(128, activation=leaky_relu, use_bias=True, kernel_initializer=self.relu_init)(action_input)
 
         # Both are passed through seperate layer before concatenating
         concat = layers.Concatenate(axis=1)([state_out, action_out])
+        # concat = layers.LayerNormalization(axis=1)(concat)
         out = layers.Dense(256, activation=leaky_relu, use_bias=True)(concat)
         out = layers.Dense(256, activation=leaky_relu, use_bias=True, kernel_initializer=self.relu_init)(out)
         outputs = layers.Dense(1)(out)

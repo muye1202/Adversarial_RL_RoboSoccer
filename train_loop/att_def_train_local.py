@@ -1,6 +1,8 @@
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 import math
 import sys
-sys.path.insert(0, '/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent')
+sys.path.insert(0, '/home/muye/Adversarial_RL_RoboSoccer')
 import numpy as np
 import tensorflow as tf
 from keras import layers
@@ -11,12 +13,12 @@ from rl.ddpg_robo_soccer import OUActionNoise, DDPG_robo
 """
 Training loop for the RL network.
 """
-std_dev = 0.1
+std_dev = 0.05
 ou_noise = OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev) * np.ones(1))
 
 total_episodes = 5000
 # Used to update target networks
-tau = 0.002
+tau = 0.001
 gamma = 0.9
 
 # To store reward history of each episode
@@ -89,10 +91,10 @@ class DefenderEnv():
             rewards += 500.0
             done = True
 
-        if self.dist_between_players() <= 0.8 and self.player_facing() <= 15.0:
+        if self.dist_between_players() <= 1.6 and self.player_facing() <= 15.0:
             rewards += 50.0 * 15.0 / (self.player_facing() + 1)
 
-        elif self.dist_between_players() <= 1.6 and self.player_facing() <= 40.0:
+        elif self.dist_between_players() <= 3.2 and self.player_facing() <= 40.0:
             rewards += 20 * 25.0 / self.player_facing()
             
         elif self.dist_between_players() <= 1.6 and self.player_facing() > 100.0:
@@ -114,8 +116,6 @@ class DefenderEnv():
 
         self.last_dist_players = self.dist_between_players()
         extra_states = np.array([self.dist_between_players(), self.player_facing(), self.angle_between()])
-
-        # print("rewards: " + str(rewards))
         
         return rewards, done, extra_states
 
@@ -268,10 +268,10 @@ class Train():
         self.ball_state = State.STOPPED
         self.prev_ball_pos = np.array([0.2, 0.0])
         self.attacker_actor = attacker_actor()
-        self.attacker_actor.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/successful_model/one_attacker/attacker_actor_2000.h5")
-        train_log_dir = "/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/train_log/local"
+        self.attacker_actor.load_weights("/home/muye/Adversarial_RL_RoboSoccer/successful_model/one_attacker/attacker_actor_2000.h5")
+        train_log_dir = "/home/muye/Adversarial_RL_RoboSoccer/train_log/local"
         self.train_summary_writer = tf.summary.create_file_writer(train_log_dir)
-        
+
         # defender params
         self.env = DefenderEnv()
         self.DEFENDER_MAX_SPEED = 1.0
@@ -281,7 +281,11 @@ class Train():
         self.defender_prev_state = np.array([2.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.2, 0.0])   # [x, y, theta, dist_between_players, 
                                                                                         #  player_facing, angle_between, ball_x, ball_y]
         self.extra_states = np.array([4.0, 0.0, 0.0])
-        self.defender_actor = DDPG_robo(first_low=40., first_high=70., sec_low=-100, sec_high=100, num_states=8, flag="defender")
+        self.defender_actor = DDPG_robo(first_low=5.0, first_high=70., sec_low=-100, sec_high=100, num_states=8, flag="defender")
+        # self.defender_actor.actor_model.load_weights('/home/muye/Adversarial_RL_RoboSoccer/successful_model/1vs1/useful_checkpt_local/defender_actor_20000.h5', by_name=True)
+        # self.defender_actor.critic_model.load_weights('/home/muye/Adversarial_RL_RoboSoccer/successful_model/1vs1/useful_checkpt_local/defender_critic_20000.h5', by_name=True)
+        # self.defender_actor.target_actor.load_weights('/home/muye/Adversarial_RL_RoboSoccer/successful_model/1vs1/useful_checkpt_local/defender_target_actor_20000.h5', by_name=True)
+        # self.defender_actor.target_critic.load_weights('/home/muye/Adversarial_RL_RoboSoccer/successful_model/1vs1/useful_checkpt_local/defender_target_critic_20000.h5', by_name=True)
 
         # DEBUG:
         self.rewards_list = []
@@ -291,18 +295,6 @@ class Train():
         self.theta_list = []
         self.att_xpos = []
         self.att_ypos = []
-        
-    def player_facing(self, angle):
-        """
-        Is player facing the target (compare angles).
-        """
-        angle_between_players = angle
-        def_facing = math.degrees(self.defender_pos[2])
-
-        if angle_between_players < 0:
-            angle_between_players = 360 - abs(angle_between_players)
-
-        return angle_between_players - def_facing
         
     def player_to_ball_dist(self):
             
@@ -392,16 +384,14 @@ class Train():
             self.prev_ball_pos = np.array([self.attacker_pos[0]+0.2, self.attacker_pos[1]])
 
             ######### DEFENDER INIT #########
-            def_y = np.random.uniform(low=-2.5, high=2.5)
-            def_init_facing = np.random.uniform(low=-80.0, high=80.0)
+            def_y = 0.0 # np.random.uniform(low=-2.5, high=2.5)
+            def_init_facing = 0.0 # np.random.uniform(low=-80.0, high=80.0)
             self.defender_pos = np.array([2.0, def_y, def_init_facing])
             init_dist_between_players = math.sqrt((self.attacker_pos[0]-2.0)**2 + (self.attacker_pos[1])**2)
-            init_angle = math.atan2(self.attacker_pos[1] - def_y, 4.0)
-            init_player_facing = self.player_facing(math.degrees(init_angle))
-            
+            init_player_facing = math.atan2(self.attacker_pos[1], 4.0)
             self.defender_prev_state = np.array([2.0, def_y, def_init_facing, init_dist_between_players, init_player_facing, 
-                                                 init_angle, 0.2, 0.0])
-
+                                                 init_player_facing, 0.2, 0.0])
+            
             self.defender_prev_state /= np.linalg.norm(self.defender_prev_state)
             normal_pre_state = self.defender_prev_state
             ep_reward_list = []
@@ -481,7 +471,7 @@ class Train():
                 self.defender_prev_state = normal_state
                 normal_pre_state = normal_state
                 ep_reward_list.append(rewards)
-                
+
                 # # DEBUG: collect attacker defender position
                 # self.x_pos.append(self.defender_pos[0])
                 # self.y_pos.append(self.defender_pos[1])
@@ -497,7 +487,7 @@ class Train():
             print("Episode * {} * Avg Reward is ==> {}".format(episodes, avg_reward))
             self.rewards_list.append(avg_reward)
             self.episodes_axis.append(episodes)
-            
+
             with self.train_summary_writer.as_default():
                 tf.summary.scalar('rewards', avg_reward, step=episodes)
                 tf.summary.scalar('actor_score', self.defender_actor.buffer.actor_loss, step=episodes)
@@ -521,16 +511,15 @@ class Train():
             # self.theta_list = []
 
             if episodes % 1000 == 0 and episodes > 0:
-                self.defender_actor.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/local/defender_actor_checkpt_5000.h5")
-                self.defender_actor.critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/local/defender_critic_checkpt_5000.h5")
-                self.defender_actor.target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/local/defender_target_actor_checkpt_5000.h5")
-                self.defender_actor.target_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/local/defender_target_critic_checkpt_5000.h5")
+                self.defender_actor.actor_model.save_weights("/home/muye/Adversarial_RL_RoboSoccer/trained_model/one_vs_one/defender_actor_checkpt_20000.h5")
+                self.defender_actor.critic_model.save_weights("/home/muye/Adversarial_RL_RoboSoccer/trained_model/one_vs_one/defender_critic_checkpt_20000.h5")
+                self.defender_actor.target_actor.save_weights("/home/muye/Adversarial_RL_RoboSoccer/trained_model/one_vs_one/defender_target_actor_checkpt_20000.h5")
+                self.defender_actor.target_critic.save_weights("/home/muye/Adversarial_RL_RoboSoccer/trained_model/one_vs_one/defender_target_critic_checkpt_20000.h5")
 
-        self.defender_actor.actor_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/local/defender_actor_5000.h5")
-        self.defender_actor.critic_model.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/local/defender_critic_5000.h5")
-        self.defender_actor.target_actor.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/local/defender_target_actor_5000.h5")
-        self.defender_actor.target_critic.save_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_vs_one/local/defender_target_critic_5000.h5")
-
+        self.defender_actor.actor_model.save_weights("/home/muye/Adversarial_RL_RoboSoccer/trained_model/one_vs_one/defender_actor_20000.h5")
+        self.defender_actor.critic_model.save_weights("/home/muye/Adversarial_RL_RoboSoccer/trained_model/one_vs_one/defender_critic_20000.h5")
+        self.defender_actor.target_actor.save_weights("/home/muye/Adversarial_RL_RoboSoccer/trained_model/one_vs_one/defender_target_actor_20000.h5")
+        self.defender_actor.target_critic.save_weights("/home/muye/Adversarial_RL_RoboSoccer/trained_model/one_vs_one/defender_target_critic_20000.h5")
 
 
 if __name__ == "__main__":
