@@ -292,7 +292,7 @@ class Train():
         self.att_xpos = []
         self.att_ypos = []
         
-        train_log_dir = "/home/muye/rl_soccer/train_log/Feb_26_alien/"
+        train_log_dir = "/home/muye/rl_soccer/train_log/with_layer_normalization/"
         self.train_summary_writer = tf.summary.create_file_writer(train_log_dir)
         
     def player_to_ball_dist(self):
@@ -460,9 +460,9 @@ class Train():
 
                 # 3-step TD Target
                 # normalize the action
-                defender_action[0] = defender_action[0]/100.0
+                defender_action[0] = defender_action[0]/10.0
                 defender_action[1] = np.pi*defender_action[1]/180.0
-                self.defender_actor.buffer.record((normal_pre_state, defender_action, rewards/100, normal_state))
+                self.defender_actor.buffer.record((normal_pre_state, defender_action, rewards/10, normal_state))
                 if (count % 3 == 0 and count > 3) or done:
                     self.defender_actor.buffer.learn(self.defender_actor.target_actor, self.defender_actor.target_critic,
                                 self.defender_actor.actor_model, self.defender_actor.critic_model,

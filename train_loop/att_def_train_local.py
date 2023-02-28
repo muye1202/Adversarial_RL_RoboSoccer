@@ -1,8 +1,14 @@
-import os
-os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 import math
 import sys
-sys.path.insert(0, '/home/muye/Adversarial_RL_RoboSoccer')
+import os
+
+save_path = '/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent'
+if os.path.exists('/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent'):
+    sys.path.insert(0, '/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent')
+else:
+    save_path = "/home/muye/Adversarial_RL_RoboSoccer"
+    sys.path.insert(0, "/home/muye/Adversarial_RL_RoboSoccer")
+
 import numpy as np
 import tensorflow as tf
 from keras import layers
@@ -268,8 +274,8 @@ class Train():
         self.ball_state = State.STOPPED
         self.prev_ball_pos = np.array([0.2, 0.0])
         self.attacker_actor = attacker_actor()
-        self.attacker_actor.load_weights("/home/muye/Adversarial_RL_RoboSoccer/successful_model/one_attacker/attacker_actor_2000.h5")
-        train_log_dir = "/home/muye/Adversarial_RL_RoboSoccer/train_log/local"
+        self.attacker_actor.load_weights(save_path + "/successful_model/one_attacker/attacker_actor_2000.h5")
+        train_log_dir = save_path + "/train_log/local"
         self.train_summary_writer = tf.summary.create_file_writer(train_log_dir)
 
         # defender params
@@ -511,15 +517,15 @@ class Train():
             # self.theta_list = []
 
             if episodes % 1000 == 0 and episodes > 0:
-                self.defender_actor.actor_model.save_weights("/home/muye/Adversarial_RL_RoboSoccer/trained_model/one_vs_one/defender_actor_checkpt_20000.h5")
-                self.defender_actor.critic_model.save_weights("/home/muye/Adversarial_RL_RoboSoccer/trained_model/one_vs_one/defender_critic_checkpt_20000.h5")
-                self.defender_actor.target_actor.save_weights("/home/muye/Adversarial_RL_RoboSoccer/trained_model/one_vs_one/defender_target_actor_checkpt_20000.h5")
-                self.defender_actor.target_critic.save_weights("/home/muye/Adversarial_RL_RoboSoccer/trained_model/one_vs_one/defender_target_critic_checkpt_20000.h5")
+                self.defender_actor.actor_model.save_weights(save_path + "/trained_model/one_vs_one/defender_actor_checkpt_20000.h5")
+                self.defender_actor.critic_model.save_weights(save_path + "/trained_model/one_vs_one/defender_critic_checkpt_20000.h5")
+                self.defender_actor.target_actor.save_weights(save_path + "/trained_model/one_vs_one/defender_target_actor_checkpt_20000.h5")
+                self.defender_actor.target_critic.save_weights(save_path + "/trained_model/one_vs_one/defender_target_critic_checkpt_20000.h5")
 
-        self.defender_actor.actor_model.save_weights("/home/muye/Adversarial_RL_RoboSoccer/trained_model/one_vs_one/defender_actor_20000.h5")
-        self.defender_actor.critic_model.save_weights("/home/muye/Adversarial_RL_RoboSoccer/trained_model/one_vs_one/defender_critic_20000.h5")
-        self.defender_actor.target_actor.save_weights("/home/muye/Adversarial_RL_RoboSoccer/trained_model/one_vs_one/defender_target_actor_20000.h5")
-        self.defender_actor.target_critic.save_weights("/home/muye/Adversarial_RL_RoboSoccer/trained_model/one_vs_one/defender_target_critic_20000.h5")
+        self.defender_actor.actor_model.save_weights(save_path + "/trained_model/one_vs_one/defender_actor_20000.h5")
+        self.defender_actor.critic_model.save_weights(save_path + "/trained_model/one_vs_one/defender_critic_20000.h5")
+        self.defender_actor.target_actor.save_weights(save_path + "/trained_model/one_vs_one/defender_target_actor_20000.h5")
+        self.defender_actor.target_critic.save_weights(save_path + "/trained_model/one_vs_one/defender_target_critic_20000.h5")
 
 
 if __name__ == "__main__":

@@ -11,3 +11,7 @@ test.py
 build
 install
 log
+train_log
+rl_interfaces
+soccer_server_infra
+images
