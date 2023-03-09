@@ -19,6 +19,4 @@
     <node pkg='rviz2' exec='rviz2' name='rviz2' output='screen' args='-d $(find-pkg-share nuturtle_description)/rviz/one_v_one.rviz'/>
 
     <node pkg='robo_simulator' exec='one_vs_one_field' name='one_one'/>
-    <!-- <node pkg='robo_simulator' exec='rs_env' name='attacker_env'/> -->
-    <node pkg='robo_simulator' exec='defender_env' name='defender_env'/>
 </launch>

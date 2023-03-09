@@ -190,7 +190,6 @@ class Defender_Evaluate(Node):
             self.follow_ball(self.ball_pos)
 
             ######### SEND DEFENDER COMMANDS #########
-            # feed in the normalized defender input
             dist_to_ball = math.sqrt((self.defender_pos.x-self.ball_pos.x)**2 + (self.defender_pos.y-self.ball_pos.y)**2)
             angle = math.degrees(math.atan2(self.robot_pos.y - self.defender_pos.y, self.robot_pos.x - self.defender_pos.x))
             player_facing = self.player_facing(angle)
@@ -202,7 +201,6 @@ class Defender_Evaluate(Node):
                 defender_pos[2] = math.radians(180 + abs(math.degrees(defender_pos[2])))
 
             defender_input = np.concatenate((defender_pos, np.array([dist_to_ball, player_facing, angle, self.ball_pos.x, self.ball_pos.y])))
-            # defender_input = defender_input / np.linalg.norm(defender_input)
             
             def_state = tf.expand_dims(tf.convert_to_tensor(defender_input), 0)
             defender_action = self.defender_model.actor_model.predict(def_state, verbose=0)

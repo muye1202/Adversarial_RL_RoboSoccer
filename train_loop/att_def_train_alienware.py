@@ -391,7 +391,6 @@ class Train():
             self.defender_prev_state = np.array([2.0, def_y, def_init_facing, init_dist_between_players, init_player_facing,
                                                  init_player_facing, 0.2, 0.0])
 
-            # self.defender_prev_state /= np.linalg.norm(self.defender_prev_state)
             normal_pre_state = self.defender_prev_state
             ep_reward_list = []
 
@@ -435,9 +434,9 @@ class Train():
                 self.ball_state = State.STOPPED
 
                 ###### DEFENDER UPDATE #######
-                defender_input = np.concatenate((self.defender_pos, self.extra_states))
-                defender_input = np.concatenate((defender_input, self.ball_pos))
-                defender_input = tf.expand_dims(tf.convert_to_tensor(defender_input), 0)
+                defender_state = np.concatenate((self.defender_pos, self.extra_states))
+                defender_state = np.concatenate((defender_state, self.ball_pos))
+                defender_input = tf.expand_dims(tf.convert_to_tensor(defender_state), 0)
                 defender_action = self.defender_actor.policy(defender_input, noise_object=ou_noise)
                 dash_speed = -defender_action[0]
                 dash_dir = defender_action[1]
@@ -452,17 +451,12 @@ class Train():
                 rewards, done, self.extra_states = self.env.step(self.ball_pos, self.attacker_pos, self.defender_pos)
 
                 # convert defender heading to radians
-                normal_state = defender_input
-                # normalize input
-                if np.linalg.norm(defender_input) > 0 and np.linalg.norm(normal_pre_state) > 0:
-                    normal_state = defender_input / np.linalg.norm(defender_input)
-                    normal_pre_state = normal_pre_state / np.linalg.norm(normal_pre_state)
+                normal_state = np.array(defender_state, dtype=float)
+                normal_state[4] = math.degrees(normal_state[4])
+                normal_state[5] = math.degrees(normal_state[5])
 
                 # 3-step TD Target
-                # normalize the action
-                defender_action[0] = defender_action[0]/10.0
-                defender_action[1] = np.pi*defender_action[1]/180.0
-                self.defender_actor.buffer.record((normal_pre_state, defender_action, rewards/10, normal_state))
+                self.defender_actor.buffer.record((normal_pre_state, defender_action, rewards/10.0, normal_state))
                 if (count % 3 == 0 and count > 3) or done:
                     self.defender_actor.buffer.learn(self.defender_actor.target_actor, self.defender_actor.target_critic,
                                 self.defender_actor.actor_model, self.defender_actor.critic_model,

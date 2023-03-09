@@ -269,7 +269,7 @@ class DDPG_robo():
             max_num = np.array([self.first_low, self.first_high, self.sec_low, self.sec_low])
             outputs = outputs * np.amax(max_num)
 
-        elif flag == "defender" or flag == "defender_predict":
+        elif flag == "defender" or flag == "attacker" or flag == "defender_predict":
             leaky_relu = layers.LeakyReLU(alpha=0.3)
             inputs = layers.Input(shape=(self.num_states))
             out = layers.Dense(256, activation=leaky_relu, use_bias=True)(inputs)
