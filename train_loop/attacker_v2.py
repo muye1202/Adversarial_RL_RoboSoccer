@@ -20,6 +20,7 @@ import tensorflow as tf
 from keras import layers
 from enum import Enum, auto
 from rl.ddpg_robo_soccer import OUActionNoise, DDPG_robo
+import matplotlib.pyplot as plt
 
 
 std_dev = 0.05
@@ -27,7 +28,7 @@ ou_noise = OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev) * np.one
 
 total_episodes = 15000
 # Used to update target networks
-tau = 0.001
+tau = 0.0005
 gamma = 0.9
 
 # To store reward history of each episode
@@ -60,7 +61,6 @@ class AttackerEnv():
         self.ball_pos = np.array([0.2, 0.0])
         self.attacker_pos = np.array([0.0, 0.0, 0.0])
         self.defender_pos = np.array([2.0, 0.0, 0.0])
-        self.last_dist_players = 2.0
         self.count_steps = 0
     
     def step(self, ball_pos, attacker_pos, defender_pos):
@@ -77,51 +77,33 @@ class AttackerEnv():
         # check whether the robot moves towards
         # the goal in the past episode:
         if self.is_scored():
-            rewards += 1500.0
+            rewards += 3000.0
             done = True
 
         # stop the defender when it runs pass the attacker
         if not self.is_scored() and self.attacker_out_of_range():
-            rewards = -1300.0
+            rewards -= 2000.0
             done = True
 
-        elif self.defender_pos[0] < self.attacker_pos[0]-0.5:
-            done = True
-            if self.dist_between_players() > 1.6:
-                rewards += 100.0
+        if self.dist_between_players() > 1.6:
+            rewards += 100.0 + 5*abs(self.dist_between_players() - 1.6)
 
-            elif self.dist_between_players() <= 1.0:
-                rewards -= 300.0
-
-        if self.dist_between_players() <= 0.8 and self.defender_pos[0] >= self.attacker_pos[0]:
-            rewards -= 500.0
+        elif self.dist_between_players() <= 0.8:
             done = True
+            rewards -= (1000.0 + 100/(0.8 - self.dist_between_players()))
 
         if self.dist_between_players() <= 1.6 and self.player_facing() <= 15.0:
             rewards -= 5.0 * 15.0 / (self.player_facing() + 1)
-
-        elif self.dist_between_players() <= 3.2 and self.player_facing() <= 30.0:
-            rewards -= 2.0 * 25.0 / self.player_facing()
-            
-        elif self.dist_between_players() <= 1.6 and self.player_facing() > 30.0:
-            rewards += self.player_facing()*0.5 + 50.0
 
         # if the player chases the opponent directly
         # it will obtain the max rewards
         if self.chasing_score() <= 10.0:
             rewards -= 5*10.0 / (self.chasing_score() + 1)
 
-        elif self.chasing_score() <= 40.0:
-            rewards -= 15*5.0 / (self.chasing_score() + 1)
+        if self.ball_to_goal_dist() <= 2.5:
+            rewards += 100.0 + 10*(2.5 - self.ball_to_goal_dist())
 
-        elif self.chasing_score() > 40.0:
-            rewards += self.chasing_score()
-
-        if self.ball_to_goal_dist() <= 2.0:
-            rewards += 100.0
-
-        self.last_dist_players = self.dist_between_players()
-        extra_states = np.array([self.dist_between_players(), self.player_facing(), self.angle_between()])
+        extra_states = np.array([self.dist_between_players(), self.angle_between()])
         
         return rewards, done, extra_states
 
@@ -294,8 +276,9 @@ class Train():
 
         # ATTACKER parameters
         self.env = AttackerEnv()
-        self.attacker_actor = DDPG_robo(first_low=30.0, first_high=100.0, sec_low=-140.0, sec_high=140.0, num_states=8, flag="attacker")
+        self.attacker_actor = DDPG_robo(first_low=30.0, first_high=100.0, sec_low=-140.0, sec_high=140.0, num_states=7, flag="attacker")
         self.extra_states = np.zeros((3,))
+        self.att_extra_states = np.array([4.0, 0.0])
 
         # DEFENDER parameters
         self.defender_actor = defender_actor()
@@ -416,18 +399,18 @@ class Train():
             self.attacker_ang = 0.0
             self.ball_pos = np.array([self.attacker_pos[0]+0.2, self.attacker_pos[1]])
             self.prev_ball_pos = np.array([self.attacker_pos[0]+0.2, self.attacker_pos[1]])
-            normal_pre_state = np.concatenate((self.attacker_pos, self.extra_states, self.ball_pos))
+            normal_pre_state = np.concatenate((self.attacker_pos, self.att_extra_states, self.ball_pos))
             normal_pre_state = normal_pre_state / np.linalg.norm(normal_pre_state)
 
             ######### DEFENDER INIT #########
-            # def_y = 0.0 # np.random.uniform(low=-2.5, high=2.5)
-            # def_init_facing = 0.0 # np.random.uniform(low=-80.0, high=80.0)
-            # self.defender_pos = np.array([2.0, def_y, def_init_facing])
-            # init_dist_between_players = math.sqrt((self.attacker_pos[0]-2.0)**2 + (self.attacker_pos[1])**2)
-            # init_player_facing = math.atan2(self.attacker_pos[1], 4.0)
-            # self.defender_prev_state = np.array([2.0, def_y, def_init_facing, init_dist_between_players, init_player_facing, 
-            #                                      init_player_facing, 0.2, 0.0])
-            
+            def_y = 0.0
+            def_init_facing = 0.0
+            self.defender_pos = np.array([2.0, def_y, def_init_facing])
+            init_dist_between_players = math.sqrt((self.attacker_pos[0]-2.0)**2 + (self.attacker_pos[1])**2)
+            init_player_facing = math.atan2(self.attacker_pos[1], 4.0)
+            self.defender_prev_state = np.array([2.0, def_y, def_init_facing, init_dist_between_players, init_player_facing, 
+                                                 init_player_facing, 0.2, 0.0])
+
             # self.defender_prev_state /= np.linalg.norm(self.defender_prev_state)
             # normal_pre_state = self.defender_prev_state
             ep_reward_list = []
@@ -435,7 +418,7 @@ class Train():
             while True:
                 count += 1
                 ###### ATTACKER UPDATE #######
-                attacker_state = np.concatenate((self.attacker_pos, self.extra_states, self.ball_pos))   # TODO: change attacker's input
+                attacker_state = np.concatenate((self.attacker_pos, self.att_extra_states, self.ball_pos))   # TODO: change attacker's input
                 attacker_input = tf.expand_dims(tf.convert_to_tensor(attacker_state), 0)
                 attacker_action = self.attacker_actor.policy(attacker_input, noise_object=ou_noise)
 
@@ -470,12 +453,12 @@ class Train():
                 
                 ######## REWARDS #########
                 self.attacker_pos[2] = math.radians(self.attacker_ang)   # attacker_ang is in degrees
-                rewards, done, self.extra_states = self.env.step(self.ball_pos, self.attacker_pos, self.defender_pos)
+                rewards, done, self.att_extra_states = self.env.step(self.ball_pos, self.attacker_pos, self.defender_pos)
 
                 # convert defender heading to radians
                 normal_state = attacker_state
-                normal_state[4] = np.pi * normal_state[4]/180.0   # convert player_facing to radians
-                normal_state[5] = np.pi * normal_state[5]/180.0   # convert angle_between to radians
+                normal_state[4] = math.radians(normal_state[4])   # convert player_facing to radians
+                normal_state[5] = math.radians(normal_state[5])   # convert angle_between to radians
 
                 # 3-step TD Target
                 self.attacker_actor.buffer.record((normal_pre_state, attacker_action, rewards/100, normal_state))
@@ -494,11 +477,14 @@ class Train():
                 angle = math.degrees(math.atan2(self.attacker_pos[1] - self.defender_pos[1], self.attacker_pos[0] - self.defender_pos[0]))
                 player_facing = self.player_facing(angle)
 
-                if self.defender_pos[2] >= 3.14:
+                if 0 < self.defender_pos[2] < 3.14:
+                    pass
+                else:
                     self.defender_pos[2] = math.radians(180 + abs(math.degrees(self.defender_pos[2])))
-                
+
                 defender_input = np.concatenate((self.defender_pos, np.array([dist_to_ball, player_facing, angle, self.ball_pos[0], self.ball_pos[1]])))
                 def_state = tf.expand_dims(tf.convert_to_tensor(defender_input), 0)
+
                 defender_action = self.defender_actor.predict(def_state, verbose=0)
                 outputs = defender_action[0] * 100.0
                 outputs[0] = tf.clip_by_value(outputs[0], 50., 100.)   # dash power
@@ -509,7 +495,7 @@ class Train():
                 self.defender_dash((dash_speed, dash_dir)) 
                 self.defender_pos[0] += self.TIME_STEP * self.def_velx
                 self.defender_pos[1] += self.TIME_STEP * self.def_vely
-                self.defender_pos[2] = math.radians(180.0 + dash_dir)
+                self.defender_pos[2] = self.def_ang
 
                 # # DEBUG: collect attacker defender position
                 # self.x_pos.append(self.defender_pos[0])
@@ -522,7 +508,7 @@ class Train():
                 if done:
                     break
 
-            avg_reward = np.mean(ep_reward_list[-40:])
+            avg_reward = np.mean(ep_reward_list[-5:])
             print("Episode * {} * Avg Reward is ==> {}".format(episodes, avg_reward))
             self.rewards_list.append(avg_reward)
             self.episodes_axis.append(episodes)
@@ -540,9 +526,6 @@ class Train():
             # plt.legend()
             # plt.show()
 
-            # plt.plot(t_axis, self.theta_list, label="defender heading")
-            # plt.legend()
-            # plt.show()
             # self.x_pos = []
             # self.y_pos = []
             # self.att_xpos = []
