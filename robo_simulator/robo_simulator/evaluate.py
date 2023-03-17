@@ -55,7 +55,7 @@ class Evaluate(Node):
 
         # load model
         self.actor_model = DDPG_robo(0., 0., 0., 0.)
-        self.actor_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/newtest_actor.h5")
+        self.actor_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_attacker/attacker_actor.h5")
         
     def ball_callback(self, ball_pos: Point):
         self.ball_pos = ball_pos
@@ -133,7 +133,7 @@ class Evaluate(Node):
         else:
             ball_pos = np.array([self.ball_pos.x, self.ball_pos.y])
             tf_prev_state = tf.expand_dims(tf.convert_to_tensor(ball_pos), 0)
-            action = self.actor_model.actor_model.predict(tf_prev_state)
+            action = self.actor_model.actor_model.predict(tf_prev_state, verbose=0)
             outputs = action[0] * kickdir_high
             outputs[0] = tf.clip_by_value(outputs[0], kickpow_lower_bound, kickpow_upper_bound)   # kick power
             outputs[1] = tf.clip_by_value(outputs[1], kickdir_low, kickdir_high) # kick direction
