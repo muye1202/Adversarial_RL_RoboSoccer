@@ -1,6 +1,3 @@
-"""
-This defender evaluation env works for the aggressive_feb27.h5 in successful_model/1vs1 folder.
-"""
 import rclpy
 import math
 import sys
@@ -27,7 +24,7 @@ class State(Enum):
 
 
 class Defender_Evaluate(Node):
-
+    
     def __init__(self):
         super().__init__("defender_eval")
         
@@ -63,7 +60,7 @@ class Defender_Evaluate(Node):
 
         # load model
         self.actor_model = DDPG_robo(0., 0., 0., 0., num_states=2, flag="predict")
-        self.actor_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_attacker/attacker_actor.h5")
+        self.actor_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/successful_model/one_attacker/attacker_actor_2000.h5")
         self.defender_model = DDPG_robo(0.,0.,0.,0., num_states=8, flag="defender_predict")
         self.defender_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/successful_model/1vs1/aggressive_feb_27/defender_checkpt_alien.h5", by_name=True)
 
@@ -187,9 +184,9 @@ class Defender_Evaluate(Node):
                 kick_dir = outputs[1]
                 kick_pow = outputs[0]
                 self.kick(kick_pow, kick_dir)
-
+                
                 self.robo_state = State.IDLE
-
+            
             self.follow_ball(self.ball_pos)
 
             ######### SEND DEFENDER COMMANDS #########
@@ -197,20 +194,20 @@ class Defender_Evaluate(Node):
             angle = math.degrees(math.atan2(self.robot_pos.y - self.defender_pos.y, self.robot_pos.x - self.defender_pos.x))
             player_facing = self.player_facing(angle)
             defender_pos = np.array([self.defender_pos.x, self.defender_pos.y, self.defender_pos.theta])
-
+            
             if 0 < defender_pos[2] < 3.14:
                 pass
             else:
                 defender_pos[2] = math.radians(180 + abs(math.degrees(defender_pos[2])))
 
             defender_input = np.concatenate((defender_pos, np.array([dist_to_ball, player_facing, angle, self.ball_pos.x, self.ball_pos.y])))
-
+            
             def_state = tf.expand_dims(tf.convert_to_tensor(defender_input), 0)
             defender_action = self.defender_model.actor_model.predict(def_state, verbose=0)
             outputs = defender_action[0] * 100.0
             outputs[0] = tf.clip_by_value(outputs[0], 50., 100.)   # dash power
             outputs[1] = tf.clip_by_value(outputs[1], -100., 100.) # dash direction
-
+            
             defender_dash = Pose2D()
             defender_dash.x = float(outputs[0])
             defender_dash.y = float(outputs[1])
