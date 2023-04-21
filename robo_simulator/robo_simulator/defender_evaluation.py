@@ -27,7 +27,7 @@ class State(Enum):
 
 
 class Defender_Evaluate(Node):
-
+    
     def __init__(self):
         super().__init__("defender_eval")
         
@@ -63,7 +63,7 @@ class Defender_Evaluate(Node):
 
         # load model
         self.actor_model = DDPG_robo(0., 0., 0., 0., num_states=2, flag="predict")
-        self.actor_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/trained_model/one_attacker/attacker_actor.h5")
+        self.actor_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/successful_model/one_attacker/attacker_actor_2000.h5")
         self.defender_model = DDPG_robo(0.,0.,0.,0., num_states=8, flag="defender_predict")
         self.defender_model.actor_model.load_weights("/home/muyejia1202/Robot_Soccer_RL/nu_robo_agent/successful_model/1vs1/aggressive_feb_27/defender_checkpt_alien.h5", by_name=True)
 
