@@ -205,8 +205,7 @@ class Adversarial_Evaluate(Node):
                 defender_pos[2] = math.radians(180 + abs(math.degrees(defender_pos[2])))
 
             defender_input = np.concatenate((defender_pos, np.array([dist_to_ball, player_facing, angle, self.ball_pos.x, self.ball_pos.y])))
-            # defender_input = defender_input / np.linalg.norm(defender_input)
-            
+
             def_state = tf.expand_dims(tf.convert_to_tensor(defender_input), 0)
             defender_action = self.defender_model.actor_model.predict(def_state, verbose=0)
             outputs = defender_action[0] * 100.0
@@ -221,7 +220,7 @@ class Adversarial_Evaluate(Node):
         
 def main(args=None):
     rclpy.init(args=args)
-    robot_pub = Defender_Evaluate()
+    robot_pub = Adversarial_Evaluate()
     rclpy.spin(robot_pub)
     rclpy.shutdown()
 

@@ -273,9 +273,9 @@ class DDPG_robo():
             leaky_relu = layers.LeakyReLU(alpha=0.3)
             inputs = layers.Input(shape=(self.num_states))
             out = layers.Dense(256, activation=leaky_relu, use_bias=True)(inputs)
-            out = layers.Dense(256, activation=leaky_relu, use_bias=True)(out)
-            out = layers.Dense(256, activation=leaky_relu, use_bias=True)(out)
-            out = layers.Dense(256, activation="tanh", use_bias=True)(out)
+            # out = layers.Dense(256, activation=leaky_relu, use_bias=True)(out)
+            # out = layers.Dense(256, activation=leaky_relu, use_bias=True)(out)
+            # out = layers.Dense(256, activation="tanh", use_bias=True)(out)
             out = layers.Dense(256, activation="tanh", use_bias=True)(out)
             outputs = layers.Dense(num_actions, activation="tanh", use_bias=True, kernel_initializer=self.tanh_init)(out)
 
@@ -286,13 +286,13 @@ class DDPG_robo():
         leaky_relu = layers.LeakyReLU(alpha=0.3)
         # State as input
         state_input = layers.Input(shape=(self.num_states))
-        state_input = layers.LayerNormalization(axis=1)(state_input)
+        #state_input = layers.LayerNormalization(axis=1)(state_input)
         state_out = layers.Dense(128, activation=leaky_relu, use_bias=True)(state_input)
         state_out = layers.Dense(128, activation=leaky_relu, use_bias=True, kernel_initializer=self.relu_init)(state_out)
 
         # Action as input
         action_input = layers.Input(shape=(num_actions))
-        action_input = layers.LayerNormalization(axis=1)(action_input)
+        #action_input = layers.LayerNormalization(axis=1)(action_input)
         action_out = layers.Dense(128, activation=leaky_relu, use_bias=True)(action_input)
         action_out = layers.Dense(128, activation=leaky_relu, use_bias=True, kernel_initializer=self.relu_init)(action_input)
 
